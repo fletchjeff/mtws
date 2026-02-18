@@ -7,9 +7,12 @@ public:
 	static constexpr uint32_t CUTOFF_PHASE_INC_90PCT_NYQUIST = 1932735283U; // 21600 * 2^32 / 48000
 	static constexpr unsigned TABLE_SIZE = 256;
 	static constexpr uint32_t TABLE_MASK = TABLE_SIZE - 1;
-	static constexpr int PARTIALS = 16;
+	static constexpr int PARTIALS = 3;
 	static constexpr int32_t UNITY_Q12 = 4096;
-	static constexpr int32_t CENTER_GAIN_SUM_Q12 = 13847; // sum of 1/n gains for n=1..16 in Q12
+	static constexpr int32_t CENTER_GAIN_SUM_Q12 = 7509; // 1 + 1/2 + 1/3 in Q12
+	static constexpr int32_t X_CENTER = 2048;
+	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
+	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
 	static constexpr uint32_t EXP2_Q16[129] = {
 	     65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
 	     71468,  71856,  72246,  72638,  73032,  73429,  73828,  74229,  74632,  75037,  75444,  75854,  76266,  76680,  77096,  77515,
@@ -44,19 +47,6 @@ public:
 		4096, // 1/1
 		2048, // 1/2
 		1365, // 1/3
-		1024, // 1/4
-		 819, // 1/5
-		 683, // 1/6
-		 585, // 1/7
-		 512, // 1/8
-		 455, // 1/9
-		 410, // 1/10
-		 372, // 1/11
-		 341, // 1/12
-		 315, // 1/13
-		 293, // 1/14
-		 273, // 1/15
-		 256, // 1/16
 	};
 
 	uint32_t phases[PARTIALS] = {};
@@ -107,18 +97,49 @@ public:
 		return base + (((UNITY_Q12 - base) * mix) >> 11);
 	}
 
+	inline int32_t __not_in_flash_func(HarmonicShiftQ16FromX)(int32_t x)
+	{
+		// Global harmonic shift for upper partials:
+		// center -> 0, full CCW -> -1, full CW -> +1.
+		if (x <= X_EDGE_DEADBAND) return -(1 << 16);
+		if (x >= (4095 - X_EDGE_DEADBAND)) return (1 << 16);
+		if (x >= (X_CENTER - X_CENTER_DEADBAND) && x <= (X_CENTER + X_CENTER_DEADBAND)) {
+			return 0;
+		}
+
+		if (x < (X_CENTER - X_CENTER_DEADBAND)) {
+			// Map [edge..center-left] -> [-1..0]
+			int32_t in_lo = X_EDGE_DEADBAND;
+			int32_t in_hi = X_CENTER - X_CENTER_DEADBAND;
+			int32_t num = x - in_lo;
+			int32_t den = in_hi - in_lo;
+			return -(1 << 16) + int32_t((int64_t(num) * (1 << 16)) / den);
+		}
+
+		// Map [center-right..edge] -> [0..+1]
+		int32_t in_lo = X_CENTER + X_CENTER_DEADBAND;
+		int32_t in_hi = 4095 - X_EDGE_DEADBAND;
+		int32_t num = x - in_lo;
+		int32_t den = in_hi - in_lo;
+		return int32_t((int64_t(num) * (1 << 16)) / den);
+	}
+
 	void ProcessSample() override __not_in_flash_func()
 	{
 		// Main knob + attenuated CV1, then smooth to reduce audible stepping.
 		int32_t pitch = KnobVal(Knob::Main) + (CVIn1() >> 1);
 		if (pitch < 0) pitch = 0;
 		if (pitch > 4095) pitch = 4095;
+		int32_t x = KnobVal(Knob::X);
+		if (x < 0) x = 0;
+		if (x > 4095) x = 4095;
 		int32_t y = KnobVal(Knob::Y);
 		if (y < 0) y = 0;
 		if (y > 4095) y = 4095;
 
 		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
+		int32_t harmonic_shift_q16 = HarmonicShiftQ16FromX(x);
 
 		bool grit_mode = (SwitchVal() == Up);
 		int full_partials = PARTIALS;
@@ -135,11 +156,15 @@ public:
 		int32_t sum = 0;
 		int32_t gain_sum = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
-			uint32_t harmonic = uint32_t(i + 1);
-			uint32_t partial_inc = phase_inc * harmonic;
+			int32_t harmonic_q16 = ((i + 1) << 16);
+			if (i > 0) {
+				harmonic_q16 += harmonic_shift_q16;
+				if (harmonic_q16 < (1 << 16)) harmonic_q16 = (1 << 16);
+			}
+			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
 			phases[i] += partial_inc;
-			int32_t gain_q12 = PartialGainQ12(i, y);
 
+			int32_t gain_q12 = PartialGainQ12(i, y);
 			if (i < full_partials) {
 				int32_t s = LookupSine(phases[i]);
 				sum += (s * gain_q12) >> 12;
@@ -147,7 +172,7 @@ public:
 			}
 		}
 
-		// Smoothly fade in the boundary partial to avoid zippering while sweeping.
+		// Smooth boundary partial fade in clean mode.
 		if (full_partials < PARTIALS && boundary_frac > 0) {
 			int i = full_partials;
 			int32_t s = LookupSine(phases[i]);
