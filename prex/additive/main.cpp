@@ -13,8 +13,10 @@ public:
 	static constexpr int32_t X_CENTER = 2048;
 	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
 	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
+	static constexpr int32_t FULL_SHIFT_MORPH_GAIN_NUM = 5; // push edges to full collapse sooner
+	static constexpr int32_t FULL_SHIFT_MORPH_GAIN_DEN = 4;
 	static constexpr uint32_t CUTOFF_PHASE_INC_FADE_START = 1811939327U; // 15/16 of cutoff
-	static constexpr int32_t Y_GAIN_DEADZONE = 256; // force true fundamental-only near CCW
+	static constexpr int32_t Y_LOW_TAPER_RANGE = 256; // smooth fade of upper partials near CCW
 	static constexpr uint32_t EXP2_Q16[129] = {
 	     65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
 	     71468,  71856,  72246,  72638,  73032,  73429,  73828,  74229,  74632,  75037,  75444,  75854,  76266,  76680,  77096,  77515,
@@ -185,21 +187,30 @@ public:
 		int32_t y = KnobVal(Knob::Y);
 		if (y < 0) y = 0;
 		if (y > 4095) y = 4095;
-		int32_t y_for_gain = (y <= Y_GAIN_DEADZONE) ? 0 : y;
 
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
 		Switch mode = SwitchVal();
 		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
 		int32_t morph_q16 = MorphQ16FromX(x);
+		int32_t morph_full_q16 = morph_q16;
+		if (full_shift_mode) {
+			morph_full_q16 = (morph_q16 * FULL_SHIFT_MORPH_GAIN_NUM) / FULL_SHIFT_MORPH_GAIN_DEN;
+			if (morph_full_q16 > (1 << 16)) morph_full_q16 = (1 << 16);
+			if (morph_full_q16 < -(1 << 16)) morph_full_q16 = -(1 << 16);
+		}
 
 		int32_t gain_sum = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
 			int32_t harmonic_q16 = full_shift_mode
-				? HarmonicQ16FromMorph(i, morph_q16)
+				? HarmonicQ16FromMorph(i, morph_full_q16)
 				: HarmonicQ16SingleShift(i, morph_q16);
 			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
 
-			int32_t gain_q12 = PartialGainQ12(i, y_for_gain);
+			int32_t gain_q12 = PartialGainQ12(i, y);
+			// Smoothly taper upper partials to zero near full CCW without a hard jump.
+			if (i > 0 && y < Y_LOW_TAPER_RANGE) {
+				gain_q12 = (gain_q12 * y) / Y_LOW_TAPER_RANGE;
+			}
 			uint8_t alias_w_q7 = CleanAliasWeightQ7(partial_inc);
 
 			cached_partial_inc[i] = partial_inc;
