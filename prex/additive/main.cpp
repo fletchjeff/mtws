@@ -7,7 +7,7 @@ public:
 	static constexpr uint32_t CUTOFF_PHASE_INC_90PCT_NYQUIST = 1932735283U; // 21600 * 2^32 / 48000
 	static constexpr unsigned TABLE_SIZE = 256;
 	static constexpr uint32_t TABLE_MASK = TABLE_SIZE - 1;
-	static constexpr int PARTIALS = 12;
+	static constexpr int PARTIALS = 16;
 	static constexpr int CONTROL_DIVISOR = 16; // control-rate decimation
 	static constexpr int32_t UNITY_Q12 = 4096;
 	static constexpr int32_t X_CENTER = 2048;
@@ -60,6 +60,10 @@ public:
 		 410, // 1/10
 		 372, // 1/11
 		 341, // 1/12
+		 315, // 1/13
+		 293, // 1/14
+		 273, // 1/15
+		 256, // 1/16
 	};
 
 	uint32_t phases[PARTIALS] = {};
