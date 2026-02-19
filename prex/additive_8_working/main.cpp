@@ -7,13 +7,12 @@ public:
 	static constexpr uint32_t CUTOFF_PHASE_INC_90PCT_NYQUIST = 1932735283U; // 21600 * 2^32 / 48000
 	static constexpr unsigned TABLE_SIZE = 256;
 	static constexpr uint32_t TABLE_MASK = TABLE_SIZE - 1;
-	static constexpr int PARTIALS = 12;
-	static constexpr int CONTROL_DIVISOR = 16; // control-rate decimation
+	static constexpr int PARTIALS = 8;
 	static constexpr int32_t UNITY_Q12 = 4096;
+	static constexpr int32_t CENTER_GAIN_SUM_Q12 = 11132; // sum(1/n), n=1..8 in Q12
 	static constexpr int32_t X_CENTER = 2048;
 	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
 	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
-	static constexpr uint32_t CUTOFF_PHASE_INC_FADE_START = 1811939327U; // 15/16 of cutoff
 	static constexpr uint32_t EXP2_Q16[129] = {
 	     65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
 	     71468,  71856,  72246,  72638,  73032,  73429,  73828,  74229,  74632,  75037,  75444,  75854,  76266,  76680,  77096,  77515,
@@ -52,29 +51,20 @@ public:
 		 819, // 1/5
 		 683, // 1/6
 		 585, // 1/7
-		 512, // 1/8
-		 455, // 1/9
-		 410, // 1/10
-		 372, // 1/11
-		 341, // 1/12
+	     512, // 1/8
 	};
 
 	uint32_t phases[PARTIALS] = {};
 	int32_t pitch_smoothed = 2048 << 4; // 12.4 fixed-point smoothed pitch control
-	int control_counter = CONTROL_DIVISOR;
-	uint32_t cached_partial_inc[PARTIALS] = {};
-	int32_t cached_gain_q12[PARTIALS] = {};
-	uint8_t cached_alias_w_q7[PARTIALS] = {};
-	uint32_t cached_inv_gain_q16 = 0;
 
 	inline int16_t __not_in_flash_func(LookupSine)(uint32_t p)
 	{
 		uint32_t index = (p >> 24) & TABLE_MASK;
-		uint32_t frac = (p >> 16) & 0xFF; // 8-bit fractional interpolation
+		uint32_t frac = (p >> 8) & 0xFFFF;
 
 		int32_t s1 = sine_table[index];
 		int32_t s2 = sine_table[(index + 1) & TABLE_MASK];
-		return int16_t(s1 + (((s2 - s1) * int32_t(frac)) >> 8));
+		return int16_t((s2 * frac + s1 * (65536 - frac)) >> 16);
 	}
 
 	inline uint32_t __not_in_flash_func(PitchToPhaseInc)(int32_t pitch_control)
@@ -139,13 +129,6 @@ public:
 		return int32_t((int64_t(num) * (1 << 16)) / den);
 	}
 
-	inline int32_t __not_in_flash_func(MorphQ16LinearFromX)(int32_t x)
-	{
-		// Straight linear mapping (no detent), used for full_shift mode.
-		// x=0 -> -1, x=2048 -> ~0, x=4095 -> +1
-		return ((x - 2048) << 5);
-	}
-
 	inline int32_t __not_in_flash_func(HarmonicQ16FromMorph)(int i, int32_t morph_q16)
 	{
 		// i=0 is fundamental, always 1x.
@@ -174,17 +157,12 @@ public:
 		return h;
 	}
 
-	inline uint8_t __not_in_flash_func(CleanAliasWeightQ7)(uint32_t partial_inc)
+	void ProcessSample() override __not_in_flash_func()
 	{
-		if (partial_inc <= CUTOFF_PHASE_INC_FADE_START) return 128;
-		if (partial_inc >= CUTOFF_PHASE_INC_90PCT_NYQUIST) return 0;
-		uint32_t rem = CUTOFF_PHASE_INC_90PCT_NYQUIST - partial_inc;
-		uint32_t span = CUTOFF_PHASE_INC_90PCT_NYQUIST - CUTOFF_PHASE_INC_FADE_START;
-		return uint8_t((uint64_t(rem) * 128U) / span);
-	}
-
-	void __not_in_flash_func(UpdateControlRate)()
-	{
+		// Main knob + attenuated CV1, then smooth to reduce audible stepping.
+		int32_t pitch = KnobVal(Knob::Main) + (CVIn1() >> 1);
+		if (pitch < 0) pitch = 0;
+		if (pitch > 4095) pitch = 4095;
 		int32_t x = KnobVal(Knob::X);
 		if (x < 0) x = 0;
 		if (x > 4095) x = 4095;
@@ -192,60 +170,56 @@ public:
 		if (y < 0) y = 0;
 		if (y > 4095) y = 4095;
 
+		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
-		Switch mode = SwitchVal();
-		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
-		int32_t morph_q16 = full_shift_mode ? MorphQ16LinearFromX(x) : MorphQ16FromX(x);
-		bool hard_mute_upper = (y <= 48);
+		int32_t morph_q16 = MorphQ16FromX(x);
 
+		Switch mode = SwitchVal();
+		bool grit_mode = false;
+		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
+		int full_partials = PARTIALS;
+		uint32_t boundary_frac = 0;
+		if (!grit_mode) {
+			// Clean mode: maximum harmonic count before aliasing, with 0.9*Nyquist guard band.
+			uint32_t max_partials_q16 = uint32_t((uint64_t(CUTOFF_PHASE_INC_90PCT_NYQUIST) << 16) / phase_inc);
+			full_partials = int(max_partials_q16 >> 16);
+			if (full_partials < 0) full_partials = 0;
+			if (full_partials > PARTIALS) full_partials = PARTIALS;
+			boundary_frac = max_partials_q16 & 0xFFFF;
+		}
+
+		int32_t sum = 0;
 		int32_t gain_sum = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
 			int32_t harmonic_q16 = full_shift_mode
 				? HarmonicQ16FromMorph(i, morph_q16)
 				: HarmonicQ16SingleShift(i, morph_q16);
 			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
+			phases[i] += partial_inc;
 
 			int32_t gain_q12 = PartialGainQ12(i, y);
-			if (i > 0 && hard_mute_upper) gain_q12 = 0;
-			uint8_t alias_w_q7 = CleanAliasWeightQ7(partial_inc);
-
-			cached_partial_inc[i] = partial_inc;
-			cached_gain_q12[i] = gain_q12;
-			cached_alias_w_q7[i] = alias_w_q7;
-			gain_sum += (gain_q12 * alias_w_q7) >> 7;
+			if (i < full_partials) {
+				int32_t s = LookupSine(phases[i]);
+				sum += (s * gain_q12) >> 12;
+				gain_sum += gain_q12;
+			}
 		}
 
-		if (gain_sum > 0) {
-			cached_inv_gain_q16 = uint32_t((uint64_t(UNITY_Q12) << 16) / uint32_t(gain_sum));
-		} else {
-			cached_inv_gain_q16 = 0;
-		}
-	}
-
-	void ProcessSample() override __not_in_flash_func()
-	{
-		// Main knob + attenuated CV1, then smooth to reduce audible stepping.
-		int32_t pitch = KnobVal(Knob::Main) + (CVIn1() >> 1);
-		if (pitch < 0) pitch = 0;
-		if (pitch > 4095) pitch = 4095;
-
-		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
-		if (++control_counter >= CONTROL_DIVISOR) {
-			control_counter = 0;
-			UpdateControlRate();
-		}
-
-		int32_t sum = 0;
-		for (int i = 0; i < PARTIALS; ++i) {
-			phases[i] += cached_partial_inc[i];
+		// Smooth boundary partial fade in clean mode.
+		if (full_partials < PARTIALS && boundary_frac > 0) {
+			int i = full_partials;
 			int32_t s = LookupSine(phases[i]);
-			int32_t contrib = (s * cached_gain_q12[i]) >> 12;
-			sum += (contrib * cached_alias_w_q7[i]) >> 7;
+			int32_t gain_q12 = PartialGainQ12(i, y);
+			int32_t contrib = (s * gain_q12) >> 12;
+			sum += int32_t((int64_t(contrib) * boundary_frac) >> 16);
+			gain_sum += int32_t((int64_t(gain_q12) * boundary_frac) >> 16);
 		}
 
+		// Always normalize by active gain to avoid heavy clipping when many
+		// partials collapse to similar frequencies/phases.
 		int32_t out = 0;
-		if (cached_inv_gain_q16 > 0) {
-			out = int32_t((int64_t(sum) * cached_inv_gain_q16) >> 16);
+		if (gain_sum > 0) {
+			out = int32_t((int64_t(sum) * UNITY_Q12) / gain_sum);
 		}
 
 		if (out > 2047) out = 2047;
