@@ -7,9 +7,9 @@ public:
 	static constexpr uint32_t CUTOFF_PHASE_INC_90PCT_NYQUIST = 1932735283U; // 21600 * 2^32 / 48000
 	static constexpr unsigned TABLE_SIZE = 256;
 	static constexpr uint32_t TABLE_MASK = TABLE_SIZE - 1;
-	static constexpr int PARTIALS = 3;
+	static constexpr int PARTIALS = 8;
 	static constexpr int32_t UNITY_Q12 = 4096;
-	static constexpr int32_t CENTER_GAIN_SUM_Q12 = 7509; // 1 + 1/2 + 1/3 in Q12
+	static constexpr int32_t CENTER_GAIN_SUM_Q12 = 11132; // sum(1/n), n=1..8 in Q12
 	static constexpr int32_t X_CENTER = 2048;
 	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
 	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
@@ -47,6 +47,11 @@ public:
 		4096, // 1/1
 		2048, // 1/2
 		1365, // 1/3
+		1024, // 1/4
+		 819, // 1/5
+		 683, // 1/6
+		 585, // 1/7
+	     512, // 1/8
 	};
 
 	uint32_t phases[PARTIALS] = {};
@@ -97,9 +102,9 @@ public:
 		return base + (((UNITY_Q12 - base) * mix) >> 11);
 	}
 
-	inline int32_t __not_in_flash_func(HarmonicShiftQ16FromX)(int32_t x)
+	inline int32_t __not_in_flash_func(MorphQ16FromX)(int32_t x)
 	{
-		// Global harmonic shift for upper partials:
+		// Morph control with detents:
 		// center -> 0, full CCW -> -1, full CW -> +1.
 		if (x <= X_EDGE_DEADBAND) return -(1 << 16);
 		if (x >= (4095 - X_EDGE_DEADBAND)) return (1 << 16);
@@ -124,6 +129,34 @@ public:
 		return int32_t((int64_t(num) * (1 << 16)) / den);
 	}
 
+	inline int32_t __not_in_flash_func(HarmonicQ16FromMorph)(int i, int32_t morph_q16)
+	{
+		// i=0 is fundamental, always 1x.
+		if (i == 0) return (1 << 16);
+
+		int32_t base = (i + 1) << 16; // harmonic series at center
+		if (morph_q16 < 0) {
+			// CCW: collapse upper partials toward 1x.
+			int32_t u = -morph_q16; // 0..65536
+			return base - int32_t((int64_t(base - (1 << 16)) * u) >> 16);
+		}
+
+		// CW: collapse upper partials toward 3x.
+		int32_t u = morph_q16; // 0..65536
+		return base + int32_t((int64_t((3 << 16) - base) * u) >> 16);
+	}
+
+	inline int32_t __not_in_flash_func(HarmonicQ16SingleShift)(int i, int32_t morph_q16)
+	{
+		// Single-step shift mode:
+		// center -> n, full CCW -> n-1, full CW -> n+1
+		if (i == 0) return (1 << 16);
+		int32_t base = (i + 1) << 16;
+		int32_t h = base + morph_q16;
+		if (h < (1 << 16)) h = (1 << 16);
+		return h;
+	}
+
 	void ProcessSample() override __not_in_flash_func()
 	{
 		// Main knob + attenuated CV1, then smooth to reduce audible stepping.
@@ -139,9 +172,11 @@ public:
 
 		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
-		int32_t harmonic_shift_q16 = HarmonicShiftQ16FromX(x);
+		int32_t morph_q16 = MorphQ16FromX(x);
 
-		bool grit_mode = (SwitchVal() == Up);
+		Switch mode = SwitchVal();
+		bool grit_mode = false;
+		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
 		int full_partials = PARTIALS;
 		uint32_t boundary_frac = 0;
 		if (!grit_mode) {
@@ -156,11 +191,9 @@ public:
 		int32_t sum = 0;
 		int32_t gain_sum = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
-			int32_t harmonic_q16 = ((i + 1) << 16);
-			if (i > 0) {
-				harmonic_q16 += harmonic_shift_q16;
-				if (harmonic_q16 < (1 << 16)) harmonic_q16 = (1 << 16);
-			}
+			int32_t harmonic_q16 = full_shift_mode
+				? HarmonicQ16FromMorph(i, morph_q16)
+				: HarmonicQ16SingleShift(i, morph_q16);
 			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
 			phases[i] += partial_inc;
 
@@ -182,10 +215,11 @@ public:
 			gain_sum += int32_t((int64_t(gain_q12) * boundary_frac) >> 16);
 		}
 
-		// Hold center-knob loudness while preventing level buildup toward full CW.
-		int32_t out = sum;
-		if (gain_sum > CENTER_GAIN_SUM_Q12) {
-			out = int32_t((int64_t(sum) * CENTER_GAIN_SUM_Q12) / gain_sum);
+		// Always normalize by active gain to avoid heavy clipping when many
+		// partials collapse to similar frequencies/phases.
+		int32_t out = 0;
+		if (gain_sum > 0) {
+			out = int32_t((int64_t(sum) * UNITY_Q12) / gain_sum);
 		}
 
 		if (out > 2047) out = 2047;
