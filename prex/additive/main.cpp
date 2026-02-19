@@ -14,6 +14,7 @@ public:
 	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
 	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
 	static constexpr uint32_t CUTOFF_PHASE_INC_FADE_START = 1811939327U; // 15/16 of cutoff
+	static constexpr int32_t Y_GAIN_DEADZONE = 256; // force true fundamental-only near CCW
 	static constexpr uint32_t EXP2_Q16[129] = {
 	     65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
 	     71468,  71856,  72246,  72638,  73032,  73429,  73828,  74229,  74632,  75037,  75444,  75854,  76266,  76680,  77096,  77515,
@@ -139,13 +140,6 @@ public:
 		return int32_t((int64_t(num) * (1 << 16)) / den);
 	}
 
-	inline int32_t __not_in_flash_func(MorphQ16LinearFromX)(int32_t x)
-	{
-		// Straight linear mapping (no detent), used for full_shift mode.
-		// x=0 -> -1, x=2048 -> ~0, x=4095 -> +1
-		return ((x - 2048) << 5);
-	}
-
 	inline int32_t __not_in_flash_func(HarmonicQ16FromMorph)(int i, int32_t morph_q16)
 	{
 		// i=0 is fundamental, always 1x.
@@ -191,12 +185,12 @@ public:
 		int32_t y = KnobVal(Knob::Y);
 		if (y < 0) y = 0;
 		if (y > 4095) y = 4095;
+		int32_t y_for_gain = (y <= Y_GAIN_DEADZONE) ? 0 : y;
 
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
 		Switch mode = SwitchVal();
 		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
-		int32_t morph_q16 = full_shift_mode ? MorphQ16LinearFromX(x) : MorphQ16FromX(x);
-		bool hard_mute_upper = (y <= 48);
+		int32_t morph_q16 = MorphQ16FromX(x);
 
 		int32_t gain_sum = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
@@ -205,8 +199,7 @@ public:
 				: HarmonicQ16SingleShift(i, morph_q16);
 			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
 
-			int32_t gain_q12 = PartialGainQ12(i, y);
-			if (i > 0 && hard_mute_upper) gain_q12 = 0;
+			int32_t gain_q12 = PartialGainQ12(i, y_for_gain);
 			uint8_t alias_w_q7 = CleanAliasWeightQ7(partial_inc);
 
 			cached_partial_inc[i] = partial_inc;
@@ -230,7 +223,7 @@ public:
 		if (pitch > 4095) pitch = 4095;
 
 		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
-		if (++control_counter >= CONTROL_DIVISOR) {
+		if (++control_counter >= CONTROL_DIVISOR || SwitchChanged()) {
 			control_counter = 0;
 			UpdateControlRate();
 		}
