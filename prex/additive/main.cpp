@@ -72,7 +72,8 @@ public:
 	uint32_t cached_partial_inc[PARTIALS] = {};
 	int32_t cached_gain_q12[PARTIALS] = {};
 	uint8_t cached_alias_w_q7[PARTIALS] = {};
-	uint32_t cached_inv_gain_q16 = 0;
+	uint32_t cached_inv_gain_odd_q16 = 0;
+	uint32_t cached_inv_gain_even_q16 = 0;
 
 	inline int16_t __not_in_flash_func(LookupSine)(uint32_t p)
 	{
@@ -203,7 +204,8 @@ public:
 			if (morph_full_q16 < -(1 << 16)) morph_full_q16 = -(1 << 16);
 		}
 
-		int32_t gain_sum = 0;
+		int32_t gain_sum_odd = 0;
+		int32_t gain_sum_even = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
 			int32_t harmonic_q16 = full_shift_mode
 				? HarmonicQ16FromMorph(i, morph_full_q16)
@@ -220,13 +222,30 @@ public:
 			cached_partial_inc[i] = partial_inc;
 			cached_gain_q12[i] = gain_q12;
 			cached_alias_w_q7[i] = alias_w_q7;
-			gain_sum += (gain_q12 * alias_w_q7) >> 7;
+			int32_t eff_gain = (gain_q12 * alias_w_q7) >> 7;
+			if (i == 0) {
+				// Fundamental goes to both outputs.
+				gain_sum_odd += eff_gain;
+				gain_sum_even += eff_gain;
+			} else if ((i & 1) == 0) {
+				// i=2,4,6... => harmonic numbers 3,5,7... (odd harmonics)
+				gain_sum_odd += eff_gain;
+			} else {
+				// i=1,3,5... => harmonic numbers 2,4,6... (even harmonics)
+				gain_sum_even += eff_gain;
+			}
 		}
 
-		if (gain_sum > 0) {
-			cached_inv_gain_q16 = uint32_t((uint64_t(UNITY_Q12) << 16) / uint32_t(gain_sum));
+		if (gain_sum_odd > 0) {
+			cached_inv_gain_odd_q16 = uint32_t((uint64_t(UNITY_Q12) << 16) / uint32_t(gain_sum_odd));
 		} else {
-			cached_inv_gain_q16 = 0;
+			cached_inv_gain_odd_q16 = 0;
+		}
+
+		if (gain_sum_even > 0) {
+			cached_inv_gain_even_q16 = uint32_t((uint64_t(UNITY_Q12) << 16) / uint32_t(gain_sum_even));
+		} else {
+			cached_inv_gain_even_q16 = 0;
 		}
 	}
 
@@ -243,24 +262,41 @@ public:
 			UpdateControlRate();
 		}
 
-		int32_t sum = 0;
+		int32_t sum_odd = 0;
+		int32_t sum_even = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
 			phases[i] += cached_partial_inc[i];
 			int32_t s = LookupSine(phases[i]);
 			int32_t contrib = (s * cached_gain_q12[i]) >> 12;
-			sum += (contrib * cached_alias_w_q7[i]) >> 7;
+			int32_t weighted = (contrib * cached_alias_w_q7[i]) >> 7;
+
+			if (i == 0) {
+				// Fundamental to both outputs.
+				sum_odd += weighted;
+				sum_even += weighted;
+			} else if ((i & 1) == 0) {
+				sum_odd += weighted;
+			} else {
+				sum_even += weighted;
+			}
 		}
 
-		int32_t out = 0;
-		if (cached_inv_gain_q16 > 0) {
-			out = int32_t((int64_t(sum) * cached_inv_gain_q16) >> 16);
+		int32_t out_odd = 0;
+		int32_t out_even = 0;
+		if (cached_inv_gain_odd_q16 > 0) {
+			out_odd = int32_t((int64_t(sum_odd) * cached_inv_gain_odd_q16) >> 16);
+		}
+		if (cached_inv_gain_even_q16 > 0) {
+			out_even = int32_t((int64_t(sum_even) * cached_inv_gain_even_q16) >> 16);
 		}
 
-		if (out > 2047) out = 2047;
-		if (out < -2048) out = -2048;
+		if (out_odd > 2047) out_odd = 2047;
+		if (out_odd < -2048) out_odd = -2048;
+		if (out_even > 2047) out_even = 2047;
+		if (out_even < -2048) out_even = -2048;
 
-		AudioOut1(out);
-		AudioOut2(out);
+		AudioOut1(out_odd);
+		AudioOut2(out_even);
 	}
 };
 
