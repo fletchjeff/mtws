@@ -23,5 +23,6 @@ macro(add_prex_target _name _dir _src)
 endmacro()
 
 add_prex_target(additive prex/additive main.cpp)
+add_prex_target(centroid prex/centroid main.cpp)
 add_prex_target(wavetable prex/wavetable main.cpp)
 add_prex_target(mvp prex/mvp main.cpp)

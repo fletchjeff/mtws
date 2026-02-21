@@ -10,13 +10,10 @@ public:
 	static constexpr int PARTIALS = 16;
 	static constexpr int CONTROL_DIVISOR = 16; // control-rate decimation
 	static constexpr int32_t UNITY_Q12 = 4096;
-	static constexpr int32_t X_CENTER = 2048;
-	static constexpr int32_t X_CENTER_DEADBAND = 80; // center "detent" width
-	static constexpr int32_t X_EDGE_DEADBAND = 80;   // edge lock width for exact 1x/3x
-	static constexpr int32_t FULL_SHIFT_MORPH_GAIN_NUM = 5; // push edges to full collapse sooner
-	static constexpr int32_t FULL_SHIFT_MORPH_GAIN_DEN = 4;
+	static constexpr int32_t ONE_Q16 = (1 << 16);
+	static constexpr int32_t MIN_CENTROID_Q16 = (1 << 16);        // partial 1.0
+	static constexpr int32_t MAX_CENTROID_Q16 = (PARTIALS << 16); // partial 16.0
 	static constexpr uint32_t CUTOFF_PHASE_INC_FADE_START = 1811939327U; // 15/16 of cutoff
-	static constexpr int32_t Y_LOW_TAPER_RANGE = 256; // smooth fade of upper partials near CCW
 	static constexpr uint32_t EXP2_Q16[129] = {
 	     65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
 	     71468,  71856,  72246,  72638,  73032,  73429,  73828,  74229,  74632,  75037,  75444,  75854,  76266,  76680,  77096,  77515,
@@ -47,25 +44,6 @@ public:
 	    -1447, -1411, -1375, -1337, -1299, -1259, -1219, -1179, -1137, -1095, -1052, -1009,  -965,  -920,  -875,  -830,
 	     -783,  -737,  -690,  -642,  -594,  -546,  -497,  -449,  -399,  -350,  -300,  -251,  -201,  -151,  -100,   -50,
 	};
-	static constexpr int16_t PARTIAL_GAIN_Q12[PARTIALS] = {
-		4096, // 1/1
-		2048, // 1/2
-		1365, // 1/3
-		1024, // 1/4
-		 819, // 1/5
-		 683, // 1/6
-		 585, // 1/7
-		 512, // 1/8
-		 455, // 1/9
-		 410, // 1/10
-		 372, // 1/11
-		 341, // 1/12
-		 315, // 1/13
-		 293, // 1/14
-		 273, // 1/15
-		 256, // 1/16
-	};
-
 	uint32_t phases[PARTIALS] = {};
 	int32_t pitch_smoothed = 2048 << 4; // 12.4 fixed-point smoothed pitch control
 	int control_counter = CONTROL_DIVISOR;
@@ -107,72 +85,54 @@ public:
 		return uint32_t((uint64_t(phase_inc) * mult) >> 16);
 	}
 
-	inline int32_t __not_in_flash_func(PartialGainQ12)(int i, int32_t y)
+	inline int32_t __not_in_flash_func(CentroidQ16FromX)(int32_t x)
 	{
-		if (i == 0) return UNITY_Q12; // fundamental is always full-scale
-		int32_t base = PARTIAL_GAIN_Q12[i];
-		if (y <= 2048) {
-			// CCW -> center: fade from 0 to 1/n
-			return (base * y) >> 11;
-		}
-		// Center -> CW: fade from 1/n to 1
-		int32_t mix = y - 2048; // 0..2047
-		return base + (((UNITY_Q12 - base) * mix) >> 11);
+		// Linear mapping avoids "sticking" near low harmonics and keeps continuous travel.
+		return MIN_CENTROID_Q16 + int32_t((int64_t(x) * (MAX_CENTROID_Q16 - MIN_CENTROID_Q16)) / 4095);
 	}
 
-	inline int32_t __not_in_flash_func(MorphQ16FromX)(int32_t x)
+	inline int32_t __not_in_flash_func(ClampQ16)(int32_t x)
 	{
-		// Morph control with detents:
-		// center -> 0, full CCW -> -1, full CW -> +1.
-		if (x <= X_EDGE_DEADBAND) return -(1 << 16);
-		if (x >= (4095 - X_EDGE_DEADBAND)) return (1 << 16);
-		if (x >= (X_CENTER - X_CENTER_DEADBAND) && x <= (X_CENTER + X_CENTER_DEADBAND)) {
-			return 0;
-		}
-
-		if (x < (X_CENTER - X_CENTER_DEADBAND)) {
-			// Map [edge..center-left] -> [-1..0]
-			int32_t in_lo = X_EDGE_DEADBAND;
-			int32_t in_hi = X_CENTER - X_CENTER_DEADBAND;
-			int32_t num = x - in_lo;
-			int32_t den = in_hi - in_lo;
-			return -(1 << 16) + int32_t((int64_t(num) * (1 << 16)) / den);
-		}
-
-		// Map [center-right..edge] -> [0..+1]
-		int32_t in_lo = X_CENTER + X_CENTER_DEADBAND;
-		int32_t in_hi = 4095 - X_EDGE_DEADBAND;
-		int32_t num = x - in_lo;
-		int32_t den = in_hi - in_lo;
-		return int32_t((int64_t(num) * (1 << 16)) / den);
+		if (x < 0) return 0;
+		if (x > ONE_Q16) return ONE_Q16;
+		return x;
 	}
 
-	inline int32_t __not_in_flash_func(HarmonicQ16FromMorph)(int i, int32_t morph_q16)
+	inline int32_t __not_in_flash_func(BlendQ16)(int32_t a_q16, int32_t b_q16, int32_t t_q16)
 	{
-		// i=0 is fundamental, always 1x.
-		if (i == 0) return (1 << 16);
-
-		int32_t base = (i + 1) << 16; // harmonic series at center
-		if (morph_q16 < 0) {
-			// CCW: collapse upper partials toward 1x.
-			int32_t u = -morph_q16; // 0..65536
-			return base - int32_t((int64_t(base - (1 << 16)) * u) >> 16);
-		}
-
-		// CW: collapse upper partials toward 3x.
-		int32_t u = morph_q16; // 0..65536
-		return base + int32_t((int64_t((3 << 16) - base) * u) >> 16);
+		if (t_q16 < 0) t_q16 = 0;
+		if (t_q16 > ONE_Q16) t_q16 = ONE_Q16;
+		return int32_t((int64_t(a_q16) * (ONE_Q16 - t_q16) + int64_t(b_q16) * t_q16) >> 16);
 	}
 
-	inline int32_t __not_in_flash_func(HarmonicQ16SingleShift)(int i, int32_t morph_q16)
+	inline int32_t __not_in_flash_func(SpectralGainQ12)(int i, int32_t centroid_q16, int32_t y)
 	{
-		// Single-step shift mode:
-		// center -> n, full CCW -> n-1, full CW -> n+1
-		if (i == 0) return (1 << 16);
-		int32_t base = (i + 1) << 16;
-		int32_t h = base + morph_q16;
-		if (h < (1 << 16)) h = (1 << 16);
-		return h;
+		int32_t harmonic_q16 = (i + 1) << 16;
+		int32_t dist_q16 = harmonic_q16 - centroid_q16;
+		if (dist_q16 < 0) dist_q16 = -dist_q16;
+
+		// CCW anchor: only the two nearest partials (linear interpolation by distance).
+		int32_t g_narrow_q16 = ClampQ16(ONE_Q16 - dist_q16);
+
+		// Mid anchor: centered 1/(1+d) profile in partial-distance space.
+		uint32_t denom_q16 = uint32_t(ONE_Q16 + dist_q16);
+		int32_t g_mid_q16 = int32_t((uint64_t(ONE_Q16) << 16) / denom_q16);
+
+		// CW anchor: wide profile, -1% per partial step from the centroid.
+		int32_t g_wide_q16 = ClampQ16(ONE_Q16 - (dist_q16 / 100));
+
+		int32_t g_q16 = 0;
+		if (y <= 2047) {
+			// Lower half: narrow -> mid.
+			int32_t t_q16 = int32_t((int64_t(y) * ONE_Q16) / 2047);
+			g_q16 = BlendQ16(g_narrow_q16, g_mid_q16, t_q16);
+		} else {
+			// Upper half: mid -> wide.
+			int32_t t_q16 = int32_t((int64_t(y - 2048) * ONE_Q16) / 2047);
+			g_q16 = BlendQ16(g_mid_q16, g_wide_q16, t_q16);
+		}
+
+		return int32_t((int64_t(g_q16) * UNITY_Q12) >> 16);
 	}
 
 	inline uint8_t __not_in_flash_func(CleanAliasWeightQ7)(uint32_t partial_inc)
@@ -194,29 +154,15 @@ public:
 		if (y > 4095) y = 4095;
 
 		uint32_t phase_inc = PitchToPhaseInc(pitch_smoothed >> 4);
-		Switch mode = SwitchVal();
-		bool full_shift_mode = (mode != Middle); // Up + Down = full_shift, Middle = single_shift
-		int32_t morph_q16 = MorphQ16FromX(x);
-		int32_t morph_full_q16 = morph_q16;
-		if (full_shift_mode) {
-			morph_full_q16 = (morph_q16 * FULL_SHIFT_MORPH_GAIN_NUM) / FULL_SHIFT_MORPH_GAIN_DEN;
-			if (morph_full_q16 > (1 << 16)) morph_full_q16 = (1 << 16);
-			if (morph_full_q16 < -(1 << 16)) morph_full_q16 = -(1 << 16);
-		}
+		int32_t centroid_q16 = CentroidQ16FromX(x);
 
 		int32_t gain_sum_odd = 0;
 		int32_t gain_sum_even = 0;
 		for (int i = 0; i < PARTIALS; ++i) {
-			int32_t harmonic_q16 = full_shift_mode
-				? HarmonicQ16FromMorph(i, morph_full_q16)
-				: HarmonicQ16SingleShift(i, morph_q16);
+			int32_t harmonic_q16 = (i + 1) << 16;
 			uint32_t partial_inc = uint32_t((uint64_t(phase_inc) * uint32_t(harmonic_q16)) >> 16);
 
-			int32_t gain_q12 = PartialGainQ12(i, y);
-			// Smoothly taper upper partials to zero near full CCW without a hard jump.
-			if (i > 0 && y < Y_LOW_TAPER_RANGE) {
-				gain_q12 = (gain_q12 * y) / Y_LOW_TAPER_RANGE;
-			}
+			int32_t gain_q12 = SpectralGainQ12(i, centroid_q16, y);
 			uint8_t alias_w_q7 = CleanAliasWeightQ7(partial_inc);
 
 			cached_partial_inc[i] = partial_inc;
@@ -257,7 +203,7 @@ public:
 		if (pitch > 4095) pitch = 4095;
 
 		pitch_smoothed = (31 * pitch_smoothed + (pitch << 4)) >> 5;
-		if (++control_counter >= CONTROL_DIVISOR || SwitchChanged()) {
+		if (++control_counter >= CONTROL_DIVISOR) {
 			control_counter = 0;
 			UpdateControlRate();
 		}
