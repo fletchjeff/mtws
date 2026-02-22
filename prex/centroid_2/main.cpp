@@ -1,16 +1,18 @@
 #include "ComputerCard.h"
 #include "hardware/interp.h"
 
+#include <array>
 #include <cstdint>
 
 /*
  * Minimal Additive Oscillator (MVP)
  * ---------------------------------
  * - 16 harmonic partials
- * - Fixed 1/n partial power distribution (Q24 constants)
+ * - Centroid on X knob, using approach #2 (blend adjacent integer-centroid profiles)
+ * - 1/n slope from centroid toward both edges (distance-domain 1/n kernel)
  * - Nyquist-safe partial count (anti-aliasing)
- * - Precomputed normalization gain per active-partial count (no runtime division)
- * - Main knob only controls fundamental pitch
+ * - Normalization via LUT + interpolation (no runtime division)
+ * - Main knob controls fundamental pitch
  * - Integer/fixed-point DSP path + RP2040 interpolator phase accumulator
  */
 class MinimalAdditiveOscillator
@@ -18,11 +20,14 @@ class MinimalAdditiveOscillator
 public:
 	static constexpr int kPartials = 16;
 	static constexpr uint32_t kNyquistPhaseInc = 0x80000000u;
+	static constexpr uint32_t kOneQ24 = 16777216u;
 
 	MinimalAdditiveOscillator(interp_hw_t *interp) : interp_(interp)
 	{
 		InitInterpolator();
 		SetBasePhaseIncrement(0);
+		SetCentroidKnob(0);
+		UpdateWeightsAndNormalization();
 	}
 
 	void SetBasePhaseIncrement(uint32_t phase_inc)
@@ -39,8 +44,41 @@ public:
 				break;
 			}
 		}
+	}
 
-		master_gain_q24_ = kMasterGainQ24BySafePartials[safe_partial_count_];
+	void SetCentroidKnob(uint16_t centroid_knob)
+	{
+		centroid_knob_ = centroid_knob;
+	}
+
+	void UpdateWeightsAndNormalization()
+	{
+		// X knob mapped to centroid position in Q12 over [0, 15].
+		// Endpoint lock ensures full CW lands exactly on partial 15.
+		uint32_t centroid_q12 = (centroid_knob_ >= 4095u)
+			? (15u << 12)
+			: (static_cast<uint32_t>(centroid_knob_) * 15u);
+
+		uint32_t center0 = centroid_q12 >> 12;
+		if (center0 > 15u) center0 = 15u;
+		uint32_t center1 = (center0 < 15u) ? (center0 + 1u) : 15u;
+		uint32_t frac_q12 = centroid_q12 & 0x0FFFu;
+
+		uint64_t sum_q24 = 0;
+		for (int i = 0; i < safe_partial_count_; ++i) {
+			uint32_t w0 = ProfileWeightQ24(static_cast<uint32_t>(i), center0);
+			uint32_t w1 = ProfileWeightQ24(static_cast<uint32_t>(i), center1);
+			int64_t dw = static_cast<int64_t>(w1) - static_cast<int64_t>(w0);
+			uint32_t w = static_cast<uint32_t>(static_cast<int64_t>(w0) + ((dw * frac_q12) >> 12));
+			active_weights_q24_[i] = w;
+			sum_q24 += w;
+		}
+
+		for (int i = safe_partial_count_; i < kPartials; ++i) {
+			active_weights_q24_[i] = 0;
+		}
+
+		master_gain_q24_ = GainFromSumQ24(sum_q24);
 	}
 
 	int16_t __not_in_flash_func(NextSample)()
@@ -52,7 +90,7 @@ public:
 		for (int i = 0; i < safe_partial_count_; ++i) {
 			uint32_t phase = base_phase * static_cast<uint32_t>(i + 1);
 			int16_t s = LookupSineLinear(phase);
-			signal_sum += static_cast<int64_t>(s) * static_cast<int64_t>(kPartialWeightQ24[i]);
+			signal_sum += static_cast<int64_t>(s) * static_cast<int64_t>(active_weights_q24_[i]);
 		}
 
 		// signal_sum is Q24-scaled; apply Q24 master gain and bring back to signed 12-bit.
@@ -70,20 +108,20 @@ private:
 	static constexpr uint32_t kSineMask = kSineTableSize - 1;
 
 	// 1/n distribution in Q24 (1.0 = 16777216).
-	static constexpr uint32_t kPartialWeightQ24[kPartials] = {
+	static constexpr uint32_t kDistanceWeightQ24[kPartials] = {
 		16777216, 8388608, 5592405, 4194304,
 		3355443, 2796202, 2396745, 2097152,
 		1864135, 1677721, 1525201, 1398101,
 		1290555, 1198372, 1118481, 1048576,
 	};
 
-	// Precomputed master normalization gain for safe partial count 0..16.
-	// gain = floor((1<<48) / sum(weights[0..count-1]))
-	static constexpr uint32_t kMasterGainQ24BySafePartials[kPartials + 1] = {
-		       0, 16777216, 11184810,  9151208,  8053063,  7347685,
-		 6847843,  6470551,  6172957,  5930507,  5728029,  5555595,
-		 5406406,  5275632,  5159740,  5056075,  4962603,
-	};
+	// Normalization LUT parameters:
+	// master_gain_q24 ~= (1<<48) / sum_q24, but read from LUT + interpolation.
+	static constexpr uint64_t kNormNumeratorQ48 = 1ull << 48;
+	static constexpr uint32_t kNormLutShift = 17;                  // LUT step = 2^17 in Q24
+	static constexpr uint32_t kNormLutSize = 1024;                 // 1025 entries with endpoint
+	static constexpr uint32_t kNormLutFracMask = (1u << kNormLutShift) - 1u;
+	static constexpr uint32_t kNormSumMaxQ24 = 6u * kOneQ24;       // conservative upper clamp
 
 	// Q16(2^x) table over [0,1], used for octave-fraction interpolation.
 	static constexpr uint32_t kExp2Q16[129] = {
@@ -144,7 +182,50 @@ private:
 	interp_hw_t *interp_;
 	uint32_t base_phase_inc_ = 0;
 	uint32_t master_gain_q24_ = 0;
+	uint32_t active_weights_q24_[kPartials] = {};
 	int safe_partial_count_ = 0;
+	uint16_t centroid_knob_ = 0;
+
+	using NormLut = std::array<uint32_t, kNormLutSize + 1>;
+
+	static constexpr NormLut kNormGainLutQ24 = []() constexpr {
+		NormLut lut = {};
+		for (uint32_t i = 0; i <= kNormLutSize; ++i) {
+			uint32_t sum_q24 = i << kNormLutShift;
+			if (sum_q24 < kOneQ24) sum_q24 = kOneQ24;
+			if (sum_q24 > kNormSumMaxQ24) sum_q24 = kNormSumMaxQ24;
+			lut[i] = static_cast<uint32_t>(kNormNumeratorQ48 / static_cast<uint64_t>(sum_q24));
+		}
+		return lut;
+	}();
+
+	static inline uint32_t ProfileWeightQ24(uint32_t partial_idx, uint32_t center_idx)
+	{
+		uint32_t dist = (partial_idx >= center_idx) ? (partial_idx - center_idx) : (center_idx - partial_idx);
+		if (dist >= static_cast<uint32_t>(kPartials)) {
+			dist = static_cast<uint32_t>(kPartials - 1);
+		}
+		return kDistanceWeightQ24[dist];
+	}
+
+	static inline uint32_t GainFromSumQ24(uint64_t sum_q24)
+	{
+		if (sum_q24 == 0) {
+			return 0;
+		}
+
+		uint32_t sum = static_cast<uint32_t>((sum_q24 > kNormSumMaxQ24) ? kNormSumMaxQ24 : sum_q24);
+		uint32_t idx = sum >> kNormLutShift;
+		if (idx >= kNormLutSize) {
+			return kNormGainLutQ24[kNormLutSize];
+		}
+
+		uint32_t frac = sum & kNormLutFracMask;
+		int64_t g0 = static_cast<int64_t>(kNormGainLutQ24[idx]);
+		int64_t g1 = static_cast<int64_t>(kNormGainLutQ24[idx + 1u]);
+		int64_t dg = g1 - g0;
+		return static_cast<uint32_t>(g0 + ((dg * frac) >> kNormLutShift));
+	}
 
 	void InitInterpolator()
 	{
@@ -225,8 +306,9 @@ private:
 
 	void __not_in_flash_func(UpdateControlRate)()
 	{
-		// Main knob only. No CV. No X/Y modulation.
+		// Main knob controls fundamental pitch. X controls centroid position.
 		int32_t main_knob = Clamp12Bit(KnobVal(Knob::Main));
+		int32_t centroid = Clamp12Bit(KnobVal(Knob::X));
 
 		// Light smoothing to reduce zippering, using shift math.
 		int32_t target_q4 = main_knob << 4;
@@ -235,6 +317,8 @@ private:
 		uint32_t phase_inc = MinimalAdditiveOscillator::PitchKnobToPhaseIncrementQ32(
 			static_cast<uint32_t>(pitch_smoothed_q4_ >> 4));
 		osc_.SetBasePhaseIncrement(phase_inc);
+		osc_.SetCentroidKnob(static_cast<uint16_t>(centroid));
+		osc_.UpdateWeightsAndNormalization();
 	}
 };
 
