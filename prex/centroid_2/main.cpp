@@ -10,7 +10,9 @@
  * ---------------------------------
  * - 16 harmonic partials
  * - Centroid on X knob, using approach #2 (blend adjacent integer-centroid profiles)
- * - 1/n slope from centroid toward both edges (distance-domain 1/n kernel)
+ * - Y controls slope width:
+ *   - Y full CCW: narrow peak around centroid
+ *   - Y full CW : full 1/n slope from centroid to edges
  * - Nyquist-safe partial count (anti-aliasing)
  * - Normalization via LUT + interpolation (no runtime division)
  * - Main knob controls fundamental pitch
@@ -22,34 +24,45 @@ public:
 	static constexpr int kPartials = 16;
 	static constexpr uint32_t kNyquistPhaseInc = 0x80000000u;
 	static constexpr uint32_t kOneQ24 = 16777216u;
+	static constexpr uint32_t kQ12One = 4096u;
 
 	MinimalAdditiveOscillator(interp_hw_t *interp) : interp_(interp)
 	{
 		InitInterpolator();
 		SetBasePhaseIncrement(0);
 		SetCentroidKnob(0);
+		SetSlopeKnob(4095);
 		UpdateWeightsAndNormalization();
 	}
 
-	void SetBasePhaseIncrement(uint32_t phase_inc)
+	bool SetBasePhaseIncrement(uint32_t phase_inc)
 	{
 		base_phase_inc_ = phase_inc;
 
 		// Anti-aliasing: keep only harmonics below Nyquist by phase increment.
-		safe_partial_count_ = 0;
+		int new_safe_partial_count = 0;
 		for (int i = 0; i < kPartials; ++i) {
 			uint64_t partial_inc = static_cast<uint64_t>(base_phase_inc_) * static_cast<uint64_t>(i + 1);
 			if (partial_inc < kNyquistPhaseInc) {
-				++safe_partial_count_;
+				++new_safe_partial_count;
 			} else {
 				break;
 			}
 		}
+
+		bool changed = (new_safe_partial_count != safe_partial_count_);
+		safe_partial_count_ = new_safe_partial_count;
+		return changed;
 	}
 
 	void SetCentroidKnob(uint16_t centroid_knob)
 	{
 		centroid_knob_ = centroid_knob;
+	}
+
+	void SetSlopeKnob(uint16_t slope_knob)
+	{
+		slope_knob_ = slope_knob;
 	}
 
 	void UpdateWeightsAndNormalization()
@@ -59,6 +72,7 @@ public:
 		uint32_t centroid_q12 = (centroid_knob_ >= 4095u)
 			? (15u << 12)
 			: (static_cast<uint32_t>(centroid_knob_) * 15u);
+		uint32_t slope_scale_q12 = SlopeScaleQ12();
 
 		uint32_t center0 = centroid_q12 >> 12;
 		if (center0 > 15u) center0 = 15u;
@@ -67,8 +81,8 @@ public:
 
 		uint64_t sum_q24 = 0;
 		for (int i = 0; i < safe_partial_count_; ++i) {
-			uint32_t w0 = ProfileWeightQ24(static_cast<uint32_t>(i), center0);
-			uint32_t w1 = ProfileWeightQ24(static_cast<uint32_t>(i), center1);
+			uint32_t w0 = ProfileWeightQ24(static_cast<uint32_t>(i), center0, slope_scale_q12);
+			uint32_t w1 = ProfileWeightQ24(static_cast<uint32_t>(i), center1, slope_scale_q12);
 			int64_t dw = static_cast<int64_t>(w1) - static_cast<int64_t>(w0);
 			uint32_t w = static_cast<uint32_t>(static_cast<int64_t>(w0) + ((dw * frac_q12) >> 12));
 			active_weights_q24_[i] = w;
@@ -108,13 +122,17 @@ private:
 	static constexpr int kSineTableSize = 256;
 	static constexpr uint32_t kSineMask = kSineTableSize - 1;
 
-	// 1/n distribution in Q24 (1.0 = 16777216).
-	static constexpr uint32_t kDistanceWeightQ24[kPartials] = {
+	// Distance-domain 1/n distribution in Q24 (1.0 = 16777216), plus zero endpoint.
+	static constexpr uint32_t kDistanceWeightQ24[kPartials + 1] = {
 		16777216, 8388608, 5592405, 4194304,
 		3355443, 2796202, 2396745, 2097152,
 		1864135, 1677721, 1525201, 1398101,
-		1290555, 1198372, 1118481, 1048576,
+		1290555, 1198372, 1118481, 1048576, 0,
 	};
+
+	// Y->slope scale in Q12. Full CW = 1.0x (pure 1/n). Full CCW = 8.0x (narrow).
+	static constexpr uint32_t kSlopeScaleMinQ12 = kQ12One;
+	static constexpr uint32_t kSlopeScaleMaxQ12 = 32768u;
 
 	// Normalization LUT parameters:
 	// master_gain_q24 ~= (1<<48) / sum_q24, but read from LUT + interpolation.
@@ -165,6 +183,7 @@ private:
 	uint32_t active_weights_q24_[kPartials] = {};
 	int safe_partial_count_ = 0;
 	uint16_t centroid_knob_ = 0;
+	uint16_t slope_knob_ = 4095;
 
 	using NormLut = std::array<uint32_t, kNormLutSize + 1>;
 
@@ -179,13 +198,39 @@ private:
 		return lut;
 	}();
 
-	static inline uint32_t ProfileWeightQ24(uint32_t partial_idx, uint32_t center_idx)
+	static inline uint32_t DistanceWeightInterpolatedQ24(uint32_t dist_q12)
+	{
+		static constexpr uint32_t kMaxDistQ12 = static_cast<uint32_t>(kPartials) << 12;
+		if (dist_q12 >= kMaxDistQ12) {
+			return 0;
+		}
+
+		uint32_t idx = dist_q12 >> 12;      // 0..15
+		uint32_t frac = dist_q12 & 0x0FFFu; // 0..4095
+		uint32_t w0 = kDistanceWeightQ24[idx];
+		uint32_t w1 = kDistanceWeightQ24[idx + 1u];
+		int64_t dw = static_cast<int64_t>(w1) - static_cast<int64_t>(w0);
+		return static_cast<uint32_t>(static_cast<int64_t>(w0) + ((dw * frac) >> 12));
+	}
+
+	inline uint32_t SlopeScaleQ12() const
+	{
+		// Invert knob sense: CCW narrows, CW widens to pure 1/n.
+		uint32_t inv = 4095u - static_cast<uint32_t>(slope_knob_);
+		uint32_t delta = kSlopeScaleMaxQ12 - kSlopeScaleMinQ12;
+		uint32_t add = (delta * inv + 2048u) >> 12; // divide by 4096 with rounding
+		if (slope_knob_ == 0u) {
+			add = delta; // exact CCW endpoint
+		}
+		return kSlopeScaleMinQ12 + add;
+	}
+
+	static inline uint32_t ProfileWeightQ24(uint32_t partial_idx, uint32_t center_idx, uint32_t slope_scale_q12)
 	{
 		uint32_t dist = (partial_idx >= center_idx) ? (partial_idx - center_idx) : (center_idx - partial_idx);
-		if (dist >= static_cast<uint32_t>(kPartials)) {
-			dist = static_cast<uint32_t>(kPartials - 1);
-		}
-		return kDistanceWeightQ24[dist];
+		uint32_t dist_q12 = dist << 12;
+		uint32_t scaled_dist_q12 = static_cast<uint32_t>((static_cast<uint64_t>(dist_q12) * slope_scale_q12) >> 12);
+		return DistanceWeightInterpolatedQ24(scaled_dist_q12);
 	}
 
 	static inline uint32_t GainFromSumQ24(uint64_t sum_q24)
@@ -247,6 +292,8 @@ public:
 private:
 	MinimalAdditiveOscillator osc_;
 	int control_counter_ = kControlDivisor;
+	uint16_t last_centroid_ = 0xFFFFu;
+	uint16_t last_slope_ = 0xFFFFu;
 
 	inline int32_t __not_in_flash_func(Clamp12Bit)(int32_t v) const
 	{
@@ -257,14 +304,31 @@ private:
 
 	void __not_in_flash_func(UpdateControlRate)()
 	{
-		// Main knob controls fundamental pitch. X controls centroid position.
+		// Main controls pitch, X controls centroid, Y controls slope width.
 		int32_t main_knob = Clamp12Bit(KnobVal(Knob::Main));
 		int32_t centroid = Clamp12Bit(KnobVal(Knob::X));
+		int32_t slope = Clamp12Bit(KnobVal(Knob::Y));
 
 		uint32_t phase_inc = kMainPitchPhaseIncQ32[static_cast<uint32_t>(main_knob)];
-		osc_.SetBasePhaseIncrement(phase_inc);
-		osc_.SetCentroidKnob(static_cast<uint16_t>(centroid));
-		osc_.UpdateWeightsAndNormalization();
+		bool spectrum_dirty = osc_.SetBasePhaseIncrement(phase_inc);
+
+		uint16_t centroid_u12 = static_cast<uint16_t>(centroid);
+		if (centroid_u12 != last_centroid_) {
+			last_centroid_ = centroid_u12;
+			osc_.SetCentroidKnob(centroid_u12);
+			spectrum_dirty = true;
+		}
+
+		uint16_t slope_u12 = static_cast<uint16_t>(slope);
+		if (slope_u12 != last_slope_) {
+			last_slope_ = slope_u12;
+			osc_.SetSlopeKnob(slope_u12);
+			spectrum_dirty = true;
+		}
+
+		if (spectrum_dirty) {
+			osc_.UpdateWeightsAndNormalization();
+		}
 	}
 };
 
