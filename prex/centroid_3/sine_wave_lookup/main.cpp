@@ -15,6 +15,10 @@ class SineWaveLookup : public ComputerCard
 public:
 	constexpr static uint32_t BASE_PHASE_INC_10HZ = 894785U; // 10 * 2^32 / 48000
 	constexpr static int CONTROL_DIVISOR = 16;
+	constexpr static int VOICES = 2;
+	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U }; // 1x, 2x
+	constexpr static int32_t VOICE_GAIN_Q12[VOICES] = { 4096, 2048 };         // 1.0, 0.5
+	constexpr static int32_t MIX_NORM_Q12 = 2731; // round((2/3) * 4096)
 
 	// Q16 lookup for 2^(x) over x=0..1 in 1/128 steps (129 endpoints).
 	constexpr static uint32_t EXP2_Q16[129] = {
@@ -38,16 +42,22 @@ public:
 	// Bitwise AND of index integer with tableMask will wrap it to table size
 	constexpr static uint32_t tableMask = tableSize - 1;
 
-	// Sine wave phase (0-2^32 gives 0-2pi phase range)
-	uint32_t phase;
-	uint32_t phase_increment;
+	// Per-voice phase accumulators.
+	uint32_t phases[VOICES];
+	uint32_t base_phase_increment;
+	uint32_t voice_phase_increment[VOICES];
 	int control_counter;
 	
 	SineWaveLookup()
 	{
 		// Initialise phase of sine wave to 0
-		phase = 0;
-		phase_increment = BASE_PHASE_INC_10HZ << 5; // 320Hz default before first knob read
+		for (int i = 0; i < VOICES; ++i) {
+			phases[i] = 0;
+		}
+		base_phase_increment = BASE_PHASE_INC_10HZ << 5; // 320Hz default before first knob read
+		for (int i = 0; i < VOICES; ++i) {
+			voice_phase_increment[i] = uint32_t((uint64_t(base_phase_increment) * VOICE_RATIO_Q16[i]) >> 16);
+		}
 		control_counter = CONTROL_DIVISOR; // force control update on first sample
 		
 		for (unsigned i=0; i<tableSize; i++)
@@ -58,7 +68,7 @@ public:
 
 	}
 
-	inline void UpdatePhaseIncrementFromMainKnob()
+	inline void ControlUpdates()
 	{
 		int32_t knob = KnobVal(Knob::Main);
 		if (knob < 0) knob = 0;
@@ -81,33 +91,47 @@ public:
 		uint32_t m2 = EXP2_Q16[idx + 1];
 		uint32_t mult = m1 + (((m2 - m1) * frac) >> 2); // Q16
 
-		phase_increment = uint32_t((uint64_t(inc) * mult) >> 16);
+		base_phase_increment = uint32_t((uint64_t(inc) * mult) >> 16);
+
+		for (int i = 0; i < VOICES; ++i) {
+			voice_phase_increment[i] = uint32_t((uint64_t(base_phase_increment) * VOICE_RATIO_Q16[i]) >> 16);
+		}
+	}
+
+	inline int32_t LookupSineLinear(uint32_t p)
+	{
+		uint32_t index = p >> 23; // convert from 32-bit phase to 9-bit lookup table index
+		int32_t r = (p & 0x7FFFFF) >> 7; // fractional part is last 23 bits of phase, shifted to 16-bit
+
+		int32_t s1 = sine[index];
+		int32_t s2 = sine[(index + 1) & tableMask];
+		return (s2 * r + s1 * (65536 - r)) >> 20;
 	}
 	
 	virtual void ProcessSample()
 	{
+		// This creates a slower control update path. If only runs once every 16 (CONTROL_DIVISOR) 
+		// samples, at about 3 kHz.
 		if (++control_counter >= CONTROL_DIVISOR)
 		{
 			control_counter = 0;
-			UpdatePhaseIncrementFromMainKnob();
+			ControlUpdates();
 		}
 
-		uint32_t index = phase >> 23; // convert from 32-bit phase to 9-bit lookup table index
-		int32_t r = (phase & 0x7FFFFF) >> 7; // fractional part is last 23 bits of phase, shifted to 16-bit 
+		int32_t sum = 0;
+		for (int i = 0; i < VOICES; ++i) {
+			phases[i] += voice_phase_increment[i];
+			int32_t s = LookupSineLinear(phases[i]);
+			sum += (s * VOICE_GAIN_Q12[i]) >> 12;
+		}
 
-		// Look up this index and next index in lookup table
-		int32_t s1 = sine[index];
-		int32_t s2 = sine[(index+1) & tableMask];
-
-		// Linear interpolation of s1 and s2, using fractional part
-		// Shift right by 20 bits
-		// (16 bits of r, and 4 bits to reduce 16-bit signed sine table to 12-bit output)
-		int32_t out = (s2 * r + s1 * (65536 - r)) >> 20;
+		// Fixed linear normalization keeps headroom and preserves harmonic ratio.
+		int32_t out = int32_t((int64_t(sum) * MIX_NORM_Q12) >> 12);
+		if (out > 2047) out = 2047;
+		if (out < -2048) out = -2048;
 
 		AudioOut1(out);
 		AudioOut2(out);
-		
-		phase += phase_increment;
 	}
 };
 
