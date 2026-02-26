@@ -1,24 +1,30 @@
 #include "ComputerCard.h"
 #include <cmath>
 
-/// Outputs sine wave at 440Hz
-
-/// Uses an integer lookup table with linear interpolation, for speed.
-/// At default clock rate of 125MHz, about 40 of these lookup-table
-//  evaluations are possible in a 48kHz sample.
-
-/// See (much simpler) sine_wave_float/ example for the same 440Hz sine
-/// evaluated using floating-point arithmetic.
+/// Three-voice additive sine oscillator scaffold (centroid_3).
+///
+/// Current implementation:
+/// - Voice 1: fundamental (1x), gain 1.0
+/// - Voice 2: second harmonic (2x), gain 0.5 (-6dB)
+/// - Voice 3: third harmonic (3x), gain 1/3 (~-9.54dB)
+/// - Main knob controls base pitch over 10 octaves: 10Hz..10240Hz
+/// - Pitch mapping uses integer/fixed-point math with EXP2_Q16 lookup
+/// - Control path runs at 1/16 audio rate (CONTROL_DIVISOR) for efficiency
+/// - Voices are summed to mono and normalized (6/11) to preserve headroom
+/// - Output is sent to both AudioOut1 and AudioOut2
+///
+/// This structure is intended to scale to higher voice counts (e.g. 16 voices)
+/// with minimal code changes.
 
 class SineWaveLookup : public ComputerCard
 {
-public:
+	public:
 	constexpr static uint32_t BASE_PHASE_INC_10HZ = 894785U; // 10 * 2^32 / 48000
 	constexpr static int CONTROL_DIVISOR = 16;
-	constexpr static int VOICES = 2;
-	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U }; // 1x, 2x
-	constexpr static int32_t VOICE_GAIN_Q12[VOICES] = { 4096, 2048 };         // 1.0, 0.5
-	constexpr static int32_t MIX_NORM_Q12 = 2731; // round((2/3) * 4096)
+	constexpr static int VOICES = 3;
+	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U, 196608U }; // 1x, 2x, 3x
+	constexpr static int32_t VOICE_GAIN_Q12[VOICES] = { 4096, 2048, 1365 };            // 1.0, 0.5, ~0.333
+	constexpr static int32_t MIX_NORM_Q12 = 2234; // round((6/11) * 4096)
 
 	// Q16 lookup for 2^(x) over x=0..1 in 1/128 steps (129 endpoints).
 	constexpr static uint32_t EXP2_Q16[129] = {
