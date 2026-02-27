@@ -32,14 +32,13 @@ class SineWaveLookup : public ComputerCard
 public:
 	constexpr static uint32_t BASE_PHASE_INC_10HZ = 894785U; // 10 * 2^32 / 48000
 	constexpr static int CONTROL_DIVISOR = 16;
-	constexpr static int VOICES = 3;
+	constexpr static int VOICES = 16;
 	constexpr static uint32_t UNITY_Q12 = 4096U;
 	constexpr static int32_t MIN_RATIO_Q16 = 6554;     // 0.1x lower bound
 	constexpr static int32_t MAX_RATIO_Q16 = 1048576;  // 16x hard upper bound
 	constexpr static uint32_t NYQUIST_PHASE_INC = 0x7FFFFFFFU;
 	constexpr static int RATIO_SMOOTH_SHIFT = 3;       // 1/8 smoothing per control tick
 	constexpr static int GAIN_SMOOTH_SHIFT = 3;        // 1/8 smoothing per control tick
-	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U, 196608U }; // 1x, 2x, 3x
 	constexpr static uint32_t CORE1_CONTROL_PERIOD_US = (CONTROL_DIVISOR * 1000000U) / 48000U;
 
 	struct ControlFrame {
@@ -155,6 +154,12 @@ public:
 		return current + step;
 	}
 
+	// Harmonic ratio in Q16 for voice index i (0->1x, 1->2x, ...).
+	inline int32_t HarmonicRatioQ16(int i)
+	{
+		return int32_t((i + 1) << 16);
+	}
+
 	// Step 8b piecewise Y shaping:
 	// - Y low half: blend narrow -> base
 	// - Y high half: blend base -> flat
@@ -198,7 +203,7 @@ public:
 
 		int32_t gain_sum_q12 = 0;
 		for (int i = 0; i < VOICES; ++i) {
-			int32_t target_ratio_q16 = int32_t(VOICE_RATIO_Q16[i]);
+			int32_t target_ratio_q16 = HarmonicRatioQ16(i);
 			if (alt_mode) {
 				if (knob_y < 2048U) {
 					uint32_t warp_q12 = (2048U - knob_y) << 1; // 0..4096
@@ -283,9 +288,9 @@ public:
 		int32_t initial_gain_sum_q12 = 0;
 
 		for (int i = 0; i < VOICES; ++i) {
-			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_inc) * VOICE_RATIO_Q16[i]) >> 16);
+			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_inc) * uint32_t(HarmonicRatioQ16(i))) >> 16);
 			control_frames[0].voice_gain_q12[i] = ShapedCentroidGainQ12(i, initial_centroid_q12, control_snapshot.knob_y);
-			smoothed_ratio_q16[i] = int32_t(VOICE_RATIO_Q16[i]);
+			smoothed_ratio_q16[i] = HarmonicRatioQ16(i);
 			smoothed_gain_q12[i] = control_frames[0].voice_gain_q12[i];
 			initial_gain_sum_q12 += control_frames[0].voice_gain_q12[i];
 		}
