@@ -39,6 +39,7 @@ public:
 	constexpr static uint32_t NYQUIST_PHASE_INC = 0x7FFFFFFFU;
 	constexpr static int RATIO_SMOOTH_SHIFT = 3;       // 1/8 smoothing per control tick
 	constexpr static int GAIN_SMOOTH_SHIFT = 3;        // 1/8 smoothing per control tick
+	constexpr static uint32_t MAKEUP_MAX_Q12 = 6144U; // 1.5x max makeup at full CW
 	constexpr static uint32_t CORE1_CONTROL_PERIOD_US = (CONTROL_DIVISOR * 1000000U) / 48000U;
 
 	struct ControlFrame {
@@ -238,12 +239,19 @@ public:
 
 		if (gain_sum_q12 > 0) {
 			uint64_t numer = uint64_t(UNITY_Q12) * UNITY_Q12;
-			write_frame.mix_norm_q12 = int32_t((numer + (uint32_t(gain_sum_q12) >> 1)) / uint32_t(gain_sum_q12));
+			int32_t mix_peak_q12 = int32_t((numer + (uint32_t(gain_sum_q12) >> 1)) / uint32_t(gain_sum_q12));
+			uint32_t makeup_q12 = UNITY_Q12;
+			if (knob_y > 2048U) {
+				uint32_t t_q12 = (knob_y - 2048U) << 1; // 0..4094 across upper half
+				if (knob_y >= 4095U) t_q12 = UNITY_Q12;
+				makeup_q12 = UNITY_Q12 + uint32_t((uint64_t(MAKEUP_MAX_Q12 - UNITY_Q12) * t_q12) >> 12);
+			}
+			write_frame.mix_norm_q12 = int32_t((int64_t(mix_peak_q12) * makeup_q12) >> 12);
 		} else {
 			write_frame.mix_norm_q12 = int32_t(UNITY_Q12);
 		}
 		if (write_frame.mix_norm_q12 < 0) write_frame.mix_norm_q12 = 0;
-		if (write_frame.mix_norm_q12 > int32_t(UNITY_Q12)) write_frame.mix_norm_q12 = int32_t(UNITY_Q12);
+		if (write_frame.mix_norm_q12 > int32_t(MAKEUP_MAX_Q12)) write_frame.mix_norm_q12 = int32_t(MAKEUP_MAX_Q12);
 
 		// Ensure frame writes complete before making the new frame visible.
 		__dmb();
