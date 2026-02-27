@@ -15,6 +15,10 @@
 ///   - CCW: narrow (at most ~2 active partials)
 ///   - Mid: baseline 1/(1+d)
 ///   - CW: flat (all partials equal)
+/// - In Switch::Up mode, Y also warps frequencies around midpoint:
+///   - Y<50%: collapse ratios toward centroid ratio
+///   - Y=50%: harmonic ratios (calm point)
+///   - Y>50%: repel ratios away from centroid ratio
 /// - Control-rate computation is offloaded to core 1
 /// - Voices are summed to mono, normalized per control frame, and sent to both outputs
 ///
@@ -28,6 +32,9 @@ public:
 	constexpr static int CONTROL_DIVISOR = 16;
 	constexpr static int VOICES = 3;
 	constexpr static uint32_t UNITY_Q12 = 4096U;
+	constexpr static int32_t MIN_RATIO_Q16 = 6554;     // 0.1x lower bound
+	constexpr static int32_t MAX_RATIO_Q16 = 1048576;  // 16x hard upper bound
+	constexpr static uint32_t NYQUIST_PHASE_INC = 0x7FFFFFFFU;
 	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U, 196608U }; // 1x, 2x, 3x
 	constexpr static uint32_t CORE1_CONTROL_PERIOD_US = (CONTROL_DIVISOR * 1000000U) / 48000U;
 
@@ -151,7 +158,7 @@ public:
 	}
 
 	// Builds a complete control frame in the inactive buffer, then atomically publishes it.
-	void PublishControlFrameFromCore1(uint32_t base_inc, uint32_t knob_x, uint32_t knob_y)
+	void PublishControlFrameFromCore1(uint32_t base_inc, uint32_t knob_x, uint32_t knob_y, uint32_t switch_pos)
 	{
 		uint32_t read_index = published_frame_index;
 		uint32_t write_index = read_index ^ 1U;
@@ -160,10 +167,34 @@ public:
 		if (knob_x > 4095U) knob_x = 4095U;
 		uint32_t centroid_max_q12 = uint32_t(VOICES - 1) << 12;
 		uint32_t centroid_q12 = uint32_t((uint64_t(knob_x) * centroid_max_q12 + 2048U) >> 12);
+		int32_t centroid_ratio_q16 = int32_t((1U << 16) + (centroid_q12 << 4));
+		bool alt_mode = (switch_pos == uint32_t(Up));
+		int32_t max_ratio_q16 = MAX_RATIO_Q16;
+		if (base_inc > 0U) {
+			uint32_t max_ratio_from_nyquist_q16 = uint32_t((uint64_t(NYQUIST_PHASE_INC) << 16) / base_inc);
+			if (max_ratio_from_nyquist_q16 < uint32_t(max_ratio_q16)) {
+				max_ratio_q16 = int32_t(max_ratio_from_nyquist_q16);
+			}
+		}
+		if (max_ratio_q16 < MIN_RATIO_Q16) max_ratio_q16 = MIN_RATIO_Q16;
 
 		int32_t gain_sum_q12 = 0;
 		for (int i = 0; i < VOICES; ++i) {
-			write_frame.voice_phase_increment[i] = uint32_t((uint64_t(base_inc) * VOICE_RATIO_Q16[i]) >> 16);
+			int32_t ratio_q16 = int32_t(VOICE_RATIO_Q16[i]);
+			if (alt_mode) {
+				if (knob_y < 2048U) {
+					uint32_t warp_q12 = (2048U - knob_y) << 1; // 0..4096
+					ratio_q16 = LerpQ12(ratio_q16, centroid_ratio_q16, warp_q12);
+				} else if (knob_y > 2048U) {
+					uint32_t warp_q12 = (knob_y - 2048U) << 1; // 0..4094
+					if (knob_y >= 4095U) warp_q12 = UNITY_Q12;
+					int32_t repel_ratio_q16 = (ratio_q16 << 1) - centroid_ratio_q16;
+					ratio_q16 = LerpQ12(ratio_q16, repel_ratio_q16, warp_q12);
+				}
+				if (ratio_q16 < MIN_RATIO_Q16) ratio_q16 = MIN_RATIO_Q16;
+				if (ratio_q16 > max_ratio_q16) ratio_q16 = max_ratio_q16;
+			}
+			write_frame.voice_phase_increment[i] = uint32_t((uint64_t(base_inc) * uint32_t(ratio_q16)) >> 16);
 			int32_t g = ShapedCentroidGainQ12(i, centroid_q12, knob_y);
 			write_frame.voice_gain_q12[i] = g;
 			gain_sum_q12 += g;
@@ -196,7 +227,8 @@ public:
 			uint32_t main_knob = control_snapshot.main_knob;
 			uint32_t knob_x = control_snapshot.knob_x;
 			uint32_t knob_y = control_snapshot.knob_y;
-			PublishControlFrameFromCore1(BasePhaseIncrementFromMainKnob(main_knob), knob_x, knob_y);
+			uint32_t switch_pos = control_snapshot.switch_pos;
+			PublishControlFrameFromCore1(BasePhaseIncrementFromMainKnob(main_knob), knob_x, knob_y, switch_pos);
 			busy_wait_us_32(CORE1_CONTROL_PERIOD_US);
 		}
 	}
@@ -265,7 +297,7 @@ public:
 
 		control_snapshot.main_knob = uint32_t(main);
 		control_snapshot.knob_x = uint32_t(x);
-		control_snapshot.knob_y = uint32_t(y); // Step 8b width control.
+		control_snapshot.knob_y = uint32_t(y); // Step 8b width + Step 9 alt-mode frequency warp.
 		control_snapshot.switch_pos = uint32_t(SwitchVal());
 		__dmb();
 	}
