@@ -7,33 +7,33 @@
 /// Three-voice additive sine oscillator scaffold (centroid_3).
 ///
 /// Current implementation:
-/// - Voice 1: fundamental (1x), gain 1.0
-/// - Voice 2: second harmonic (2x), gain 0.5 (-6dB)
-/// - Voice 3: third harmonic (3x), gain 1/3 (~-9.54dB)
+/// - Voice ratios are harmonic: 1x, 2x, 3x
 /// - Main knob controls base pitch over 10 octaves: 10Hz..10240Hz
-/// - Pitch mapping uses integer/fixed-point math with EXP2_Q16 lookup
-/// - Control path runs at 1/16 audio rate (CONTROL_DIVISOR) for efficiency
-/// - Voices are summed to mono and normalized (6/11) to preserve headroom
-/// - Output is sent to both AudioOut1 and AudioOut2
+/// - X knob controls centroid position of a symmetric gain bump
+/// - Step 8a gain curve is g(d) = 1 / (1 + d), where d is partial-index distance
+/// - Y knob is captured in control snapshot but not used yet (reserved for Step 8b)
+/// - Control-rate computation is offloaded to core 1
+/// - Voices are summed to mono, normalized per control frame, and sent to both outputs
 ///
 /// This structure is intended to scale to higher voice counts (e.g. 16 voices)
 /// with minimal code changes.
 
 class SineWaveLookup : public ComputerCard
 {
-	public:
+public:
 	constexpr static uint32_t BASE_PHASE_INC_10HZ = 894785U; // 10 * 2^32 / 48000
 	constexpr static int CONTROL_DIVISOR = 16;
 	constexpr static int VOICES = 3;
+	constexpr static uint32_t UNITY_Q12 = 4096U;
 	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U, 196608U }; // 1x, 2x, 3x
-	constexpr static int32_t VOICE_GAIN_Q12[VOICES] = { 4096, 2048, 1365 };            // 1.0, 0.5, ~0.333
-	constexpr static int32_t MIX_NORM_Q12 = 2234; // round((6/11) * 4096)
 	constexpr static uint32_t CORE1_CONTROL_PERIOD_US = (CONTROL_DIVISOR * 1000000U) / 48000U;
+
 	struct ControlFrame {
 		uint32_t voice_phase_increment[VOICES];
 		int32_t voice_gain_q12[VOICES];
 		int32_t mix_norm_q12;
 	};
+
 	struct ControlInputSnapshot {
 		uint32_t main_knob;
 		uint32_t knob_x;
@@ -66,16 +66,19 @@ class SineWaveLookup : public ComputerCard
 	// Per-voice phase accumulators.
 	uint32_t phases[VOICES];
 	ControlFrame control_frames[2];
-	// Core0 writes the latest controls; core1 reads snapshot to build the next frame.
-	volatile ControlInputSnapshot control_snapshot;
-		// Core1 publishes the active frame index after writing the inactive frame.
-		volatile uint32_t published_frame_index;
-		int control_counter;
 
-		// Converts a 0..4095 main knob snapshot to base phase increment (10Hz..10240Hz).
-		inline uint32_t BasePhaseIncrementFromMainKnob(uint32_t knob)
-		{
-			if (knob > 4095U) knob = 4095U;
+	// Core 0 writes these snapshot values; core 1 reads them to compute the next frame.
+	volatile ControlInputSnapshot control_snapshot;
+
+	// Core 1 publishes this active frame index after fully writing the inactive frame.
+	volatile uint32_t published_frame_index;
+
+	int control_counter;
+
+	// Converts a 0..4095 main knob snapshot to base phase increment (10Hz..10240Hz).
+	inline uint32_t BasePhaseIncrementFromMainKnob(uint32_t knob)
+	{
+		if (knob > 4095U) knob = 4095U;
 
 		// Map knob 0..4095 to 10 octaves: 10Hz..10240Hz.
 		// 512 substeps per octave => 10*512 = 5120 total positions.
@@ -88,123 +91,160 @@ class SineWaveLookup : public ComputerCard
 		uint32_t inc = BASE_PHASE_INC_10HZ << octave_int;
 
 		// Use 2-bit interpolation between 1/128-octave table points to get 1/512-octave resolution.
-		uint32_t idx = sub >> 2;    // 0..127
-		uint32_t frac = sub & 0x3;  // 0..3
+		uint32_t idx = sub >> 2;   // 0..127
+		uint32_t frac = sub & 0x3; // 0..3
 		uint32_t m1 = EXP2_Q16[idx];
 		uint32_t m2 = EXP2_Q16[idx + 1];
 		uint32_t mult = m1 + (((m2 - m1) * frac) >> 2); // Q16
 
-			return uint32_t((uint64_t(inc) * mult) >> 16);
-		}
+		return uint32_t((uint64_t(inc) * mult) >> 16);
+	}
 
-		// Builds a complete control frame in the inactive buffer, then atomically publishes it.
-		void PublishControlFrameFromCore1(uint32_t base_inc)
-		{
-			uint32_t read_index = published_frame_index;
+	// Step 8a gain model: distance from centroid in Q12 partial-index units.
+	// Returns Q12 gain g(d) = 1 / (1 + d), where d >= 0.
+	inline int32_t CentroidBaseGainQ12(int partial_index, uint32_t centroid_q12)
+	{
+		uint32_t pos_q12 = uint32_t(partial_index) << 12;
+		uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
+		uint32_t denom_q12 = UNITY_Q12 + d_q12;
+		uint64_t numer = uint64_t(UNITY_Q12) * UNITY_Q12; // 1.0 in Q12 divided by Q12 denominator
+		return int32_t((numer + (denom_q12 >> 1)) / denom_q12); // rounded divide on control core
+	}
+
+	// Builds a complete control frame in the inactive buffer, then atomically publishes it.
+	void PublishControlFrameFromCore1(uint32_t base_inc, uint32_t knob_x)
+	{
+		uint32_t read_index = published_frame_index;
 		uint32_t write_index = read_index ^ 1U;
 		ControlFrame& write_frame = control_frames[write_index];
 
-		// Write a complete frame into the inactive buffer.
+		if (knob_x > 4095U) knob_x = 4095U;
+		uint32_t centroid_max_q12 = uint32_t(VOICES - 1) << 12;
+		uint32_t centroid_q12 = uint32_t((uint64_t(knob_x) * centroid_max_q12 + 2048U) >> 12);
+
+		int32_t gain_sum_q12 = 0;
 		for (int i = 0; i < VOICES; ++i) {
 			write_frame.voice_phase_increment[i] = uint32_t((uint64_t(base_inc) * VOICE_RATIO_Q16[i]) >> 16);
-			write_frame.voice_gain_q12[i] = VOICE_GAIN_Q12[i];
+			int32_t g = CentroidBaseGainQ12(i, centroid_q12);
+			write_frame.voice_gain_q12[i] = g;
+			gain_sum_q12 += g;
 		}
-		write_frame.mix_norm_q12 = MIX_NORM_Q12;
+
+		if (gain_sum_q12 > 0) {
+			uint64_t numer = uint64_t(UNITY_Q12) * UNITY_Q12;
+			write_frame.mix_norm_q12 = int32_t((numer + (uint32_t(gain_sum_q12) >> 1)) / uint32_t(gain_sum_q12));
+		} else {
+			write_frame.mix_norm_q12 = int32_t(UNITY_Q12);
+		}
 
 		// Ensure frame writes complete before making the new frame visible.
 		__dmb();
-			published_frame_index = write_index;
-		}
+		published_frame_index = write_index;
+	}
 
-		// Static trampoline required by pico_multicore to call the instance loop on core 1.
-		static void core1_entry()
-		{
-			((SineWaveLookup *)ThisPtr())->ControlCoreLoop();
-		}
+	// Static trampoline required by pico_multicore to call the instance loop on core 1.
+	static void core1_entry()
+	{
+		((SineWaveLookup *)ThisPtr())->ControlCoreLoop();
+	}
 
-		// Core 1 control-rate worker: reads snapshots, computes frame, and publishes periodically.
-		void ControlCoreLoop()
+	// Core 1 control-rate worker: reads snapshots, computes frame, and publishes periodically.
+	void ControlCoreLoop()
+	{
+		while (1)
 		{
-			while (1)
-		{
-			// Step 6 split: core1 owns control math and frame publication cadence.
 			__dmb();
 			uint32_t main_knob = control_snapshot.main_knob;
-			uint32_t base_inc = BasePhaseIncrementFromMainKnob(main_knob);
-			PublishControlFrameFromCore1(base_inc);
-				busy_wait_us_32(CORE1_CONTROL_PERIOD_US);
-			}
+			uint32_t knob_x = control_snapshot.knob_x;
+			PublishControlFrameFromCore1(BasePhaseIncrementFromMainKnob(main_knob), knob_x);
+			busy_wait_us_32(CORE1_CONTROL_PERIOD_US);
 		}
-		
-		// Initializes lookup table/state, primes control buffers, and launches core 1.
-		SineWaveLookup()
-		{
-			// Initialise phase of sine wave to 0
+	}
+
+	// Initializes lookup table/state, primes control buffers, and launches core 1.
+	SineWaveLookup()
+	{
 		for (int i = 0; i < VOICES; ++i) {
 			phases[i] = 0;
 		}
-		uint32_t initial_base_phase_increment = BASE_PHASE_INC_10HZ << 5; // 320Hz default before first knob read
+
 		control_snapshot.main_knob = 2048U;
 		control_snapshot.knob_x = 0U;
 		control_snapshot.knob_y = 0U;
 		control_snapshot.switch_pos = uint32_t(Middle);
+
+		uint32_t initial_base_inc = BASE_PHASE_INC_10HZ << 5; // 320Hz default before first knob read
+		uint32_t initial_centroid_q12 = 0U; // X=0 -> centroid at partial 1 (index 0)
+		int32_t initial_gain_sum_q12 = 0;
+
 		for (int i = 0; i < VOICES; ++i) {
-			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_phase_increment) * VOICE_RATIO_Q16[i]) >> 16);
-			control_frames[0].voice_gain_q12[i] = VOICE_GAIN_Q12[i];
+			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_inc) * VOICE_RATIO_Q16[i]) >> 16);
+			control_frames[0].voice_gain_q12[i] = CentroidBaseGainQ12(i, initial_centroid_q12);
+			initial_gain_sum_q12 += control_frames[0].voice_gain_q12[i];
+		}
+
+		if (initial_gain_sum_q12 > 0) {
+			uint64_t numer = uint64_t(UNITY_Q12) * UNITY_Q12;
+			control_frames[0].mix_norm_q12 = int32_t((numer + (uint32_t(initial_gain_sum_q12) >> 1)) / uint32_t(initial_gain_sum_q12));
+		} else {
+			control_frames[0].mix_norm_q12 = int32_t(UNITY_Q12);
+		}
+
+		for (int i = 0; i < VOICES; ++i) {
 			control_frames[1].voice_phase_increment[i] = control_frames[0].voice_phase_increment[i];
 			control_frames[1].voice_gain_q12[i] = control_frames[0].voice_gain_q12[i];
 		}
-		control_frames[0].mix_norm_q12 = MIX_NORM_Q12;
-		control_frames[1].mix_norm_q12 = MIX_NORM_Q12;
+		control_frames[1].mix_norm_q12 = control_frames[0].mix_norm_q12;
+
 		published_frame_index = 0;
 		control_counter = CONTROL_DIVISOR; // force control update on first sample
-		
-		for (unsigned i=0; i<tableSize; i++)
+
+		for (unsigned i = 0; i < tableSize; i++)
 		{
 			// just shy of 2^15 * sin
-			sine[i] = int16_t(32000*sin(2*i*M_PI/double(tableSize)));
+			sine[i] = int16_t(32000 * sin(2 * i * M_PI / double(tableSize)));
 		}
 
-			multicore_launch_core1(core1_entry);
-		}
+		multicore_launch_core1(core1_entry);
+	}
 
-		// Core 0 control snapshot capture: reads UI and stores values for core 1 consumption.
-		inline void ControlUpdates()
-		{
-			// Step 6 split: core0 captures controls into a shared snapshot.
+	// Core 0 control snapshot capture: reads UI and stores values for core 1 consumption.
+	inline void ControlUpdates()
+	{
 		int32_t main = KnobVal(Knob::Main);
 		if (main < 0) main = 0;
 		if (main > 4095) main = 4095;
+
 		int32_t x = KnobVal(Knob::X);
 		if (x < 0) x = 0;
 		if (x > 4095) x = 4095;
+
 		int32_t y = KnobVal(Knob::Y);
 		if (y < 0) y = 0;
 		if (y > 4095) y = 4095;
 
 		control_snapshot.main_knob = uint32_t(main);
 		control_snapshot.knob_x = uint32_t(x);
-		control_snapshot.knob_y = uint32_t(y);
+		control_snapshot.knob_y = uint32_t(y); // Reserved for Step 8b width control.
 		control_snapshot.switch_pos = uint32_t(SwitchVal());
-			__dmb();
-		}
+		__dmb();
+	}
 
-		// 32-bit phase to sine conversion with linear interpolation from 512-point table.
-		inline int32_t LookupSineLinear(uint32_t p)
-		{
-			uint32_t index = p >> 23; // convert from 32-bit phase to 9-bit lookup table index
-		int32_t r = (p & 0x7FFFFF) >> 7; // fractional part is last 23 bits of phase, shifted to 16-bit
-
+	// 32-bit phase to sine conversion with linear interpolation from 512-point table.
+	inline int32_t LookupSineLinear(uint32_t p)
+	{
+		uint32_t index = p >> 23;           // convert from 32-bit phase to 9-bit table index
+		int32_t r = (p & 0x7FFFFF) >> 7;    // fractional part in Q16
 		int32_t s1 = sine[index];
 		int32_t s2 = sine[(index + 1) & tableMask];
-			return (s2 * r + s1 * (65536 - r)) >> 20;
-		}
-		
-		// Audio-rate loop: runs control snapshot cadence, consumes published frame, and outputs mono sum.
-		virtual void ProcessSample()
-		{
-			// This creates a slower control update path. If only runs once every 16 (CONTROL_DIVISOR) 
-		// samples, at about 3 kHz.
+		return (s2 * r + s1 * (65536 - r)) >> 20;
+	}
+
+	// Audio-rate loop: runs control snapshot cadence, consumes published frame, and outputs mono sum.
+	virtual void ProcessSample()
+	{
+		// This creates a slower control update path. If only runs once every 16 samples,
+		// the control-rate path runs at about 3kHz.
 		if (++control_counter >= CONTROL_DIVISOR)
 		{
 			control_counter = 0;
@@ -223,7 +263,6 @@ class SineWaveLookup : public ComputerCard
 			sum += (s * frame.voice_gain_q12[i]) >> 12;
 		}
 
-		// Fixed linear normalization keeps headroom and preserves harmonic ratio.
 		int32_t out = int32_t((int64_t(sum) * frame.mix_norm_q12) >> 12);
 		if (out > 2047) out = 2047;
 		if (out < -2048) out = -2048;
@@ -233,12 +272,9 @@ class SineWaveLookup : public ComputerCard
 	}
 };
 
-
 // Program entry: constructs the card app and starts the blocking audio run loop.
 int main()
 {
 	SineWaveLookup sw;
 	sw.Run();
 }
-
-  

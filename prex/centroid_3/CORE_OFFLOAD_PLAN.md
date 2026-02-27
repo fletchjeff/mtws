@@ -16,7 +16,7 @@ Progress from the current 3-voice additive scaffold to a stable 16-voice impleme
 - ✅ Step 5 complete: core 1 owns frame publication path.
 - ✅ Step 6 complete: core 1 computes base pitch + per-voice phase increments and publishes full frame.
 - ✅ Step 7 complete: core 0 snapshots `main/x/y/switch`; core 1 consumes snapshot.
-- ▶️ Next target: Step 8 (normal mode centroid gain mapping with harmonic frequencies retained).
+- ▶️ Next target: Step 8a (X centroid-only gain mapping with harmonic frequencies retained).
 
 ## Step 1 - Baseline Freeze
 - Keep current code unchanged.
@@ -61,11 +61,26 @@ Progress from the current 3-voice additive scaffold to a stable 16-voice impleme
 - Core 1 reads snapshots and computes next frame.
 - Gate to continue: deterministic behavior; no direct UI reads needed in core 1 DSP path.
 
-## Step 8 - Implement Normal Mode Centroid Gain Mapping
+## Step 8a - Implement X Centroid Gain Mapping
 - Keep harmonic ratios (`i+1`) in normal mode.
-- Use `X` to set centroid position across partial index.
-- Use `Y` to set width/slope (spread) of gain curve around centroid.
-- Gate to continue: analyzer shows amplitude envelope moving with X/Y while frequencies stay harmonic.
+- Use `X` to set continuous centroid position across partial index.
+- Use symmetric baseline gain curve around centroid:
+  - `d(i) = |i - centroid|`
+  - `g_base(i) = 1 / (1 + d(i))`
+- Keep `Y` captured but not used yet (fixed midpoint behavior for this sub-step).
+- Recompute `mix_norm_q12` from per-frame gain sum.
+- Gate to continue: analyzer shows centroid follows `X` while frequencies stay harmonic.
+
+## Step 8b - Add Y Width Control for Centroid Bump
+- Keep harmonic ratios (`i+1`) in normal mode.
+- Use piecewise `Y` behavior around midpoint:
+  - `Y=50%` -> baseline `g_base(i) = 1 / (1 + d(i))`
+  - `Y=0%` -> narrow bump (at most ~2 active partials)
+  - `Y=100%` -> flat gains (all partials equal)
+- Implement as blend:
+  - lower half (`0..50%`): narrow -> baseline
+  - upper half (`50..100%`): baseline -> flat
+- Gate to continue: analyzer shows width/slope controlled by `Y`, centered at the `X` centroid.
 
 ## Step 9 - Implement Alt Mode Frequency Pull Toward Centroid
 - Active only when `Switch::Up`.
@@ -95,6 +110,9 @@ Progress from the current 3-voice additive scaffold to a stable 16-voice impleme
   - analyzer check
   - modulation stress check
 - Gate to continue: each stage stable before increasing voices.
+- If 16 voices is too CPU intensive, look at replacing the centroid gain calcuations with a reciprocal LUT and multiply-shift.
+- Optimization note: if control-rate divides become a bottleneck at higher voice counts,
+  replace runtime divides in centroid gain path with reciprocal LUT + multiply/shift.
 
 ## Step 12 - Long-Run Stress + Validation
 - Run continuous modulation test (manual + CV/LFO).
