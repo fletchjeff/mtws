@@ -19,6 +19,8 @@
 ///   - Y<50%: collapse ratios toward centroid ratio
 ///   - Y=50%: harmonic ratios (calm point)
 ///   - Y>50%: repel ratios away from centroid ratio
+/// - Step 10 adds smoothing of per-voice ratio/gain targets on core 1
+///   and clamps on published frame values for stability.
 /// - Control-rate computation is offloaded to core 1
 /// - Voices are summed to mono, normalized per control frame, and sent to both outputs
 ///
@@ -35,6 +37,8 @@ public:
 	constexpr static int32_t MIN_RATIO_Q16 = 6554;     // 0.1x lower bound
 	constexpr static int32_t MAX_RATIO_Q16 = 1048576;  // 16x hard upper bound
 	constexpr static uint32_t NYQUIST_PHASE_INC = 0x7FFFFFFFU;
+	constexpr static int RATIO_SMOOTH_SHIFT = 3;       // 1/8 smoothing per control tick
+	constexpr static int GAIN_SMOOTH_SHIFT = 3;        // 1/8 smoothing per control tick
 	constexpr static uint32_t VOICE_RATIO_Q16[VOICES] = { 65536U, 131072U, 196608U }; // 1x, 2x, 3x
 	constexpr static uint32_t CORE1_CONTROL_PERIOD_US = (CONTROL_DIVISOR * 1000000U) / 48000U;
 
@@ -84,6 +88,8 @@ public:
 	volatile uint32_t published_frame_index;
 
 	int control_counter;
+	int32_t smoothed_ratio_q16[VOICES];
+	int32_t smoothed_gain_q12[VOICES];
 
 	// Converts a 0..4095 main knob snapshot to base phase increment (10Hz..10240Hz).
 	inline uint32_t BasePhaseIncrementFromMainKnob(uint32_t knob)
@@ -137,6 +143,18 @@ public:
 		return int32_t((int64_t(a) * int32_t(UNITY_Q12 - t_q12) + int64_t(b) * int32_t(t_q12)) >> 12);
 	}
 
+	// Integer one-pole smoothing step with guaranteed progress for small deltas.
+	inline int32_t SmoothToward(int32_t current, int32_t target, int shift)
+	{
+		if (shift <= 0) return target;
+		int32_t delta = target - current;
+		int32_t step = delta >> shift;
+		if (step == 0 && delta != 0) {
+			step = (delta > 0) ? 1 : -1;
+		}
+		return current + step;
+	}
+
 	// Step 8b piecewise Y shaping:
 	// - Y low half: blend narrow -> base
 	// - Y high half: blend base -> flat
@@ -180,24 +198,37 @@ public:
 
 		int32_t gain_sum_q12 = 0;
 		for (int i = 0; i < VOICES; ++i) {
-			int32_t ratio_q16 = int32_t(VOICE_RATIO_Q16[i]);
+			int32_t target_ratio_q16 = int32_t(VOICE_RATIO_Q16[i]);
 			if (alt_mode) {
 				if (knob_y < 2048U) {
 					uint32_t warp_q12 = (2048U - knob_y) << 1; // 0..4096
-					ratio_q16 = LerpQ12(ratio_q16, centroid_ratio_q16, warp_q12);
+					target_ratio_q16 = LerpQ12(target_ratio_q16, centroid_ratio_q16, warp_q12);
 				} else if (knob_y > 2048U) {
 					uint32_t warp_q12 = (knob_y - 2048U) << 1; // 0..4094
 					if (knob_y >= 4095U) warp_q12 = UNITY_Q12;
-					int32_t repel_ratio_q16 = (ratio_q16 << 1) - centroid_ratio_q16;
-					ratio_q16 = LerpQ12(ratio_q16, repel_ratio_q16, warp_q12);
+					int32_t repel_ratio_q16 = (target_ratio_q16 << 1) - centroid_ratio_q16;
+					target_ratio_q16 = LerpQ12(target_ratio_q16, repel_ratio_q16, warp_q12);
 				}
-				if (ratio_q16 < MIN_RATIO_Q16) ratio_q16 = MIN_RATIO_Q16;
-				if (ratio_q16 > max_ratio_q16) ratio_q16 = max_ratio_q16;
+				if (target_ratio_q16 < MIN_RATIO_Q16) target_ratio_q16 = MIN_RATIO_Q16;
+				if (target_ratio_q16 > max_ratio_q16) target_ratio_q16 = max_ratio_q16;
 			}
-			write_frame.voice_phase_increment[i] = uint32_t((uint64_t(base_inc) * uint32_t(ratio_q16)) >> 16);
-			int32_t g = ShapedCentroidGainQ12(i, centroid_q12, knob_y);
-			write_frame.voice_gain_q12[i] = g;
-			gain_sum_q12 += g;
+
+			smoothed_ratio_q16[i] = SmoothToward(smoothed_ratio_q16[i], target_ratio_q16, RATIO_SMOOTH_SHIFT);
+			if (smoothed_ratio_q16[i] < MIN_RATIO_Q16) smoothed_ratio_q16[i] = MIN_RATIO_Q16;
+			if (smoothed_ratio_q16[i] > max_ratio_q16) smoothed_ratio_q16[i] = max_ratio_q16;
+
+			uint32_t voice_inc = uint32_t((uint64_t(base_inc) * uint32_t(smoothed_ratio_q16[i])) >> 16);
+			if (voice_inc > NYQUIST_PHASE_INC) voice_inc = NYQUIST_PHASE_INC;
+			write_frame.voice_phase_increment[i] = voice_inc;
+
+			int32_t target_gain_q12 = ShapedCentroidGainQ12(i, centroid_q12, knob_y);
+			if (target_gain_q12 < 0) target_gain_q12 = 0;
+			if (target_gain_q12 > int32_t(UNITY_Q12)) target_gain_q12 = int32_t(UNITY_Q12);
+			smoothed_gain_q12[i] = SmoothToward(smoothed_gain_q12[i], target_gain_q12, GAIN_SMOOTH_SHIFT);
+			if (smoothed_gain_q12[i] < 0) smoothed_gain_q12[i] = 0;
+			if (smoothed_gain_q12[i] > int32_t(UNITY_Q12)) smoothed_gain_q12[i] = int32_t(UNITY_Q12);
+			write_frame.voice_gain_q12[i] = smoothed_gain_q12[i];
+			gain_sum_q12 += smoothed_gain_q12[i];
 		}
 
 		if (gain_sum_q12 > 0) {
@@ -206,6 +237,8 @@ public:
 		} else {
 			write_frame.mix_norm_q12 = int32_t(UNITY_Q12);
 		}
+		if (write_frame.mix_norm_q12 < 0) write_frame.mix_norm_q12 = 0;
+		if (write_frame.mix_norm_q12 > int32_t(UNITY_Q12)) write_frame.mix_norm_q12 = int32_t(UNITY_Q12);
 
 		// Ensure frame writes complete before making the new frame visible.
 		__dmb();
@@ -252,6 +285,8 @@ public:
 		for (int i = 0; i < VOICES; ++i) {
 			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_inc) * VOICE_RATIO_Q16[i]) >> 16);
 			control_frames[0].voice_gain_q12[i] = ShapedCentroidGainQ12(i, initial_centroid_q12, control_snapshot.knob_y);
+			smoothed_ratio_q16[i] = int32_t(VOICE_RATIO_Q16[i]);
+			smoothed_gain_q12[i] = control_frames[0].voice_gain_q12[i];
 			initial_gain_sum_q12 += control_frames[0].voice_gain_q12[i];
 		}
 
