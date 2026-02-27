@@ -10,8 +10,11 @@
 /// - Voice ratios are harmonic: 1x, 2x, 3x
 /// - Main knob controls base pitch over 10 octaves: 10Hz..10240Hz
 /// - X knob controls centroid position of a symmetric gain bump
-/// - Step 8a gain curve is g(d) = 1 / (1 + d), where d is partial-index distance
-/// - Y knob is captured in control snapshot but not used yet (reserved for Step 8b)
+/// - Baseline gain curve is g(d) = 1 / (1 + d), where d is partial-index distance
+/// - Y knob controls bump width:
+///   - CCW: narrow (at most ~2 active partials)
+///   - Mid: baseline 1/(1+d)
+///   - CW: flat (all partials equal)
 /// - Control-rate computation is offloaded to core 1
 /// - Voices are summed to mono, normalized per control frame, and sent to both outputs
 ///
@@ -111,8 +114,44 @@ public:
 		return int32_t((numer + (denom_q12 >> 1)) / denom_q12); // rounded divide on control core
 	}
 
+	// Step 8b narrow endpoint curve: g_narrow(d) = max(0, 1 - d), in Q12.
+	inline int32_t CentroidNarrowGainQ12(int partial_index, uint32_t centroid_q12)
+	{
+		uint32_t pos_q12 = uint32_t(partial_index) << 12;
+		uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
+		if (d_q12 >= UNITY_Q12) return 0;
+		return int32_t(UNITY_Q12 - d_q12);
+	}
+
+	// Linear interpolation in Q12 between a and b using t in 0..4096.
+	inline int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12)
+	{
+		if (t_q12 > UNITY_Q12) t_q12 = UNITY_Q12;
+		return int32_t((int64_t(a) * int32_t(UNITY_Q12 - t_q12) + int64_t(b) * int32_t(t_q12)) >> 12);
+	}
+
+	// Step 8b piecewise Y shaping:
+	// - Y low half: blend narrow -> base
+	// - Y high half: blend base -> flat
+	inline int32_t ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y)
+	{
+		if (knob_y > 4095U) knob_y = 4095U;
+
+		int32_t g_base = CentroidBaseGainQ12(partial_index, centroid_q12);
+		int32_t g_narrow = CentroidNarrowGainQ12(partial_index, centroid_q12);
+
+		if (knob_y <= 2048U) {
+			uint32_t t_q12 = knob_y << 1; // 0..4096 across lower half
+			return LerpQ12(g_narrow, g_base, t_q12);
+		}
+
+		uint32_t t_q12 = (knob_y - 2048U) << 1; // 0..4094 across upper half
+		if (knob_y >= 4095U) t_q12 = UNITY_Q12; // force exact flat endpoint
+		return LerpQ12(g_base, int32_t(UNITY_Q12), t_q12);
+	}
+
 	// Builds a complete control frame in the inactive buffer, then atomically publishes it.
-	void PublishControlFrameFromCore1(uint32_t base_inc, uint32_t knob_x)
+	void PublishControlFrameFromCore1(uint32_t base_inc, uint32_t knob_x, uint32_t knob_y)
 	{
 		uint32_t read_index = published_frame_index;
 		uint32_t write_index = read_index ^ 1U;
@@ -125,7 +164,7 @@ public:
 		int32_t gain_sum_q12 = 0;
 		for (int i = 0; i < VOICES; ++i) {
 			write_frame.voice_phase_increment[i] = uint32_t((uint64_t(base_inc) * VOICE_RATIO_Q16[i]) >> 16);
-			int32_t g = CentroidBaseGainQ12(i, centroid_q12);
+			int32_t g = ShapedCentroidGainQ12(i, centroid_q12, knob_y);
 			write_frame.voice_gain_q12[i] = g;
 			gain_sum_q12 += g;
 		}
@@ -156,7 +195,8 @@ public:
 			__dmb();
 			uint32_t main_knob = control_snapshot.main_knob;
 			uint32_t knob_x = control_snapshot.knob_x;
-			PublishControlFrameFromCore1(BasePhaseIncrementFromMainKnob(main_knob), knob_x);
+			uint32_t knob_y = control_snapshot.knob_y;
+			PublishControlFrameFromCore1(BasePhaseIncrementFromMainKnob(main_knob), knob_x, knob_y);
 			busy_wait_us_32(CORE1_CONTROL_PERIOD_US);
 		}
 	}
@@ -179,7 +219,7 @@ public:
 
 		for (int i = 0; i < VOICES; ++i) {
 			control_frames[0].voice_phase_increment[i] = uint32_t((uint64_t(initial_base_inc) * VOICE_RATIO_Q16[i]) >> 16);
-			control_frames[0].voice_gain_q12[i] = CentroidBaseGainQ12(i, initial_centroid_q12);
+			control_frames[0].voice_gain_q12[i] = ShapedCentroidGainQ12(i, initial_centroid_q12, control_snapshot.knob_y);
 			initial_gain_sum_q12 += control_frames[0].voice_gain_q12[i];
 		}
 
@@ -225,7 +265,7 @@ public:
 
 		control_snapshot.main_knob = uint32_t(main);
 		control_snapshot.knob_x = uint32_t(x);
-		control_snapshot.knob_y = uint32_t(y); // Reserved for Step 8b width control.
+		control_snapshot.knob_y = uint32_t(y); // Step 8b width control.
 		control_snapshot.switch_pos = uint32_t(SwitchVal());
 		__dmb();
 	}
