@@ -25,3 +25,16 @@ endmacro()
 add_prex_target(additive prex/additive main.cpp)
 target_link_libraries(additive pico_multicore)
 add_prex_target(wavetable prex/wavetable main.cpp)
+
+add_prex_target(mtws prex/mtws main.cpp)
+target_sources(mtws PUBLIC
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/core/control_router.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/core/midi_worker.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/engines/additive_engine.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/engines/engine_registry.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/engines/placeholder_engine.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/engines/wavetable_engine.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/usb/usb_descriptors.c
+)
+target_include_directories(mtws PUBLIC ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/usb)
+target_link_libraries(mtws pico_multicore tinyusb_device tinyusb_board hardware_flash hardware_sync)
