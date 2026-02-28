@@ -1,7 +1,7 @@
 #include "prex/mtws/engines/wavetable_engine.h"
 
-#include "prex/wavetable/wavetable_bank_a_64x512.h"
-#include "prex/wavetable/wavetable_bank_b_64x512.h"
+#include "prex/mtws/wavetables/wavetable_bank_a_64x512.h"
+#include "prex/mtws/wavetables/wavetable_bank_b_64x512.h"
 
 namespace mtws {
 
