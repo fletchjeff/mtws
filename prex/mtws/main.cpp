@@ -25,6 +25,7 @@ class MTWSApp : public ComputerCard {
       : lut_(),
         registry_(&lut_),
         midi_worker_(),
+        published_ui_snapshot_index_(0),
         published_frame_index_(0),
         control_counter_(int(kControlDivisor)),
         switch_candidate_(Middle),
@@ -36,6 +37,7 @@ class MTWSApp : public ComputerCard {
         transition_samples_remaining_(0),
         seen_note_on_counter_(0),
         note_flash_samples_remaining_(0),
+        last_cv_note_sent_(255),
         core1_started_(false) {
     instance_ = this;
 
@@ -58,7 +60,8 @@ class MTWSApp : public ComputerCard {
     init_ui.pulse1_high = false;
     init_ui.selected_slot = selected_slot_;
     init_ui.panel_alt_latched = panel_alt_latched_;
-    ui_snapshot_ = init_ui;
+    ui_snapshots_[0] = init_ui;
+    ui_snapshots_[1] = init_ui;
 
     MidiState init_midi{};
     init_midi.note_active = false;
@@ -89,7 +92,8 @@ class MTWSApp : public ComputerCard {
       midi_worker_.Poll();
 
       __dmb();
-      UISnapshot ui = ui_snapshot_;
+      uint32_t ui_read_index = published_ui_snapshot_index_;
+      UISnapshot ui = ui_snapshots_[ui_read_index];
       MidiState midi = midi_worker_.Snapshot();
 
       GlobalControlFrame global = ControlRouter::BuildGlobalFrame(ui, midi);
@@ -164,8 +168,12 @@ class MTWSApp : public ComputerCard {
     ui.selected_slot = selected_slot_;
     ui.panel_alt_latched = panel_alt_latched_;
 
-    ui_snapshot_ = ui;
     __dmb();
+    uint32_t ui_read_index = published_ui_snapshot_index_;
+    uint32_t ui_write_index = ui_read_index ^ 1U;
+    ui_snapshots_[ui_write_index] = ui;
+    __dmb();
+    published_ui_snapshot_index_ = ui_write_index;
   }
 
   inline void UpdateSlotLEDs(const ControlFrame& frame) {
@@ -237,7 +245,10 @@ class MTWSApp : public ComputerCard {
     AudioOut1(int16_t(out1));
     AudioOut2(int16_t(out2));
 
-    CVOut1MIDINote(frame.global.last_midi_note);
+    if (frame.global.last_midi_note != last_cv_note_sent_) {
+      CVOut1MIDINote(frame.global.last_midi_note);
+      last_cv_note_sent_ = frame.global.last_midi_note;
+    }
   }
 
  private:
@@ -247,7 +258,8 @@ class MTWSApp : public ComputerCard {
   EngineRegistry registry_;
   MIDIWorker midi_worker_;
 
-  UISnapshot ui_snapshot_;
+  volatile uint32_t published_ui_snapshot_index_;
+  UISnapshot ui_snapshots_[2];
   volatile uint32_t published_frame_index_;
   ControlFrame control_frames_[2];
 
@@ -264,6 +276,7 @@ class MTWSApp : public ComputerCard {
 
   uint32_t seen_note_on_counter_;
   int note_flash_samples_remaining_;
+  uint8_t last_cv_note_sent_;
 
   bool core1_started_;
 };

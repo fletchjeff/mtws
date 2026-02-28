@@ -19,9 +19,11 @@ class AdditiveEngine : public EngineInterface {
   static constexpr int32_t kMinRatioQ16 = 6554;      // 0.1x
   static constexpr int32_t kMaxRatioQ16 = 1048576;   // 16x
   static constexpr uint32_t kNyquistPhaseInc = 0x7FFFFFFFU;
+  static constexpr uint32_t kPartialMaxPhaseInc = 0x7F000000U;  // ~23.8kHz @ 48kHz (just below Nyquist)
   static constexpr int kRatioSmoothShift = 3;
   static constexpr int kGainSmoothShift = 3;
-  static constexpr uint32_t kMakeupMaxQ12 = 6144U;  // 1.5x
+  static constexpr int kRenderSumShift = 4;  // Fixed headroom for odd/even bus sums.
+  static constexpr uint32_t kAdditiveMasterGainQ12 = 65536U;  // Aggressive target makeup, auto-capped per frame.
 
   inline int32_t HarmonicRatioQ16(int i) const { return int32_t((i + 1) << 16); }
 
