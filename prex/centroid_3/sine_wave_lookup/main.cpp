@@ -161,6 +161,18 @@ public:
 		return int32_t((i + 1) << 16);
 	}
 
+	// Reflectively fold x into [lo, hi], creating a "bounce" at each boundary.
+	inline int32_t FoldReflectQ16(int32_t x, int32_t lo, int32_t hi)
+	{
+		int64_t span = int64_t(hi) - int64_t(lo);
+		if (span <= 0) return lo;
+		int64_t period = span << 1;
+		int64_t t = (int64_t(x) - int64_t(lo)) % period;
+		if (t < 0) t += period;
+		if (t > span) t = period - t;
+		return int32_t(int64_t(lo) + t);
+	}
+
 	// Step 8b piecewise Y shaping:
 	// - Y low half: blend narrow -> base
 	// - Y high half: blend base -> flat
@@ -206,14 +218,21 @@ public:
 		for (int i = 0; i < VOICES; ++i) {
 			int32_t target_ratio_q16 = HarmonicRatioQ16(i);
 			if (alt_mode) {
-				if (knob_y < 2048U) {
-					uint32_t warp_q12 = (2048U - knob_y) << 1; // 0..4096
-					target_ratio_q16 = LerpQ12(target_ratio_q16, centroid_ratio_q16, warp_q12);
-				} else if (knob_y > 2048U) {
-					uint32_t warp_q12 = (knob_y - 2048U) << 1; // 0..4094
-					if (knob_y >= 4095U) warp_q12 = UNITY_Q12;
-					int32_t repel_ratio_q16 = (target_ratio_q16 << 1) - centroid_ratio_q16;
-					target_ratio_q16 = LerpQ12(target_ratio_q16, repel_ratio_q16, warp_q12);
+				if (i == 0 && knob_y > 2048U) {
+					target_ratio_q16 = HarmonicRatioQ16(0); // keep partial 0 fixed at 1x
+				} else {
+					if (knob_y < 2048U) {
+						uint32_t warp_q12 = (2048U - knob_y) << 1; // 0..4096
+						target_ratio_q16 = LerpQ12(target_ratio_q16, centroid_ratio_q16, warp_q12);
+					} else if (knob_y > 2048U) {
+						uint32_t warp_q12 = (knob_y - 2048U) << 1; // 0..4094
+						if (knob_y >= 4095U) warp_q12 = UNITY_Q12;
+						int32_t repel_ratio_q16 = (target_ratio_q16 << 1) - centroid_ratio_q16;
+						target_ratio_q16 = LerpQ12(target_ratio_q16, repel_ratio_q16, warp_q12);
+					}
+
+					// Reflective boundary behaviour: ratios bounce at 1x and the dynamic upper limit.
+					target_ratio_q16 = FoldReflectQ16(target_ratio_q16, HarmonicRatioQ16(0), max_ratio_q16);
 				}
 				if (target_ratio_q16 < MIN_RATIO_Q16) target_ratio_q16 = MIN_RATIO_Q16;
 				if (target_ratio_q16 > max_ratio_q16) target_ratio_q16 = max_ratio_q16;
