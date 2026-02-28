@@ -17,6 +17,7 @@ class MTWSApp : public ComputerCard {
  public:
   static constexpr uint32_t kControlDivisor = 16;
   static constexpr uint32_t kControlPeriodUs = (kControlDivisor * 1000000U) / 48000U;
+  static constexpr uint8_t kSwitchDebounceTicks = 3;
   static constexpr uint32_t kCrossfadeSamples = 64;  // ~1.33ms
   static constexpr uint32_t kNoteFlashOffSamples = 960;  // ~20ms
 
@@ -26,9 +27,11 @@ class MTWSApp : public ComputerCard {
         midi_worker_(),
         published_frame_index_(0),
         control_counter_(int(kControlDivisor)),
-        last_switch_(Middle),
+        switch_candidate_(Middle),
+        switch_stable_(Middle),
+        switch_stable_count_(0),
         panel_alt_latched_(false),
-        selected_slot_(0),
+        selected_slot_(5),
         previous_slot_(0),
         transition_samples_remaining_(0),
         seen_note_on_counter_(0),
@@ -105,7 +108,23 @@ class MTWSApp : public ComputerCard {
   }
 
   inline void CaptureUISnapshotAndHandleSwitching() {
+    Switch prev_stable = switch_stable_;
     Switch sw = SwitchVal();
+    if (sw != switch_candidate_) {
+      switch_candidate_ = sw;
+      switch_stable_count_ = 0;
+    } else if (switch_candidate_ != switch_stable_) {
+      if (switch_stable_count_ < kSwitchDebounceTicks) {
+        ++switch_stable_count_;
+      }
+      if (switch_stable_count_ >= kSwitchDebounceTicks) {
+        switch_stable_ = switch_candidate_;
+        switch_stable_count_ = 0;
+      }
+    } else {
+      switch_stable_count_ = 0;
+    }
+    sw = switch_stable_;
 
     if (sw == Up) {
       panel_alt_latched_ = true;
@@ -113,7 +132,7 @@ class MTWSApp : public ComputerCard {
       panel_alt_latched_ = false;
     }
 
-    bool down_edge = (sw == Down) && (last_switch_ != Down);
+    bool down_edge = (sw == Down) && (prev_stable != Down);
     if (down_edge) {
       previous_slot_ = selected_slot_;
       selected_slot_ = uint8_t((selected_slot_ + 1U) % kNumOscillatorSlots);
@@ -125,7 +144,6 @@ class MTWSApp : public ComputerCard {
 
       registry_.Get(selected_slot_)->OnSelected();
     }
-    last_switch_ = sw;
 
     UISnapshot ui{};
     ui.knob_main = uint16_t(KnobVal(Knob::Main) < 0 ? 0 : (KnobVal(Knob::Main) > 4095 ? 4095 : KnobVal(Knob::Main)));
@@ -234,7 +252,9 @@ class MTWSApp : public ComputerCard {
   ControlFrame control_frames_[2];
 
   int control_counter_;
-  Switch last_switch_;
+  Switch switch_candidate_;
+  Switch switch_stable_;
+  uint8_t switch_stable_count_;
   bool panel_alt_latched_;
   uint8_t selected_slot_;
 
