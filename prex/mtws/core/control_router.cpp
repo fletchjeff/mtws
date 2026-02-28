@@ -4,6 +4,7 @@ namespace mtws {
 
 namespace {
 constexpr uint32_t kBasePhaseInc10Hz = 894785U;  // 10 * 2^32 / 48k
+constexpr uint32_t kMaxPhaseInc10kHz = 894784853U;  // 10000 * 2^32 / 48k
 constexpr uint32_t kUnityQ12 = 4096U;
 
 // 2^(x) for x in [0,1] on 1/128 grid, Q16 format.
@@ -96,6 +97,8 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   uint32_t base_inc = BasePhaseIncrementFromPitchCode(pitch_code);
   int semitone = midi.note_active ? (int(midi.current_note) - 60) : 0;
   out.pitch_inc = ApplySemitoneToPhaseInc(base_inc, semitone);
+  if (out.pitch_inc < kBasePhaseInc10Hz) out.pitch_inc = kBasePhaseInc10Hz;
+  if (out.pitch_inc > kMaxPhaseInc10kHz) out.pitch_inc = kMaxPhaseInc10kHz;
 
   uint16_t x_local = ui.knob_x;
   if (ui.audio1_connected) {

@@ -12,34 +12,49 @@ inline int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
 }
 }  // namespace
 
-WavetableEngine::WavetableEngine() : phase_(0), out1_delay_{0, 0} {}
+WavetableEngine::WavetableEngine()
+    : phase_(0),
+      out2_pair_valid_(false),
+      out2_active_l_(0),
+      out2_active_r_(0),
+      out2_pending_valid_(false),
+      out2_pending_l_(0),
+      out2_pending_r_(0),
+      out2_was_in_fade_window_(false) {}
 
 void WavetableEngine::OnSelected() {
   // Keep phase continuity for smooth transitions.
-  out1_delay_[0] = 0;
-  out1_delay_[1] = 0;
+  out2_pair_valid_ = false;
+  out2_pending_valid_ = false;
+  out2_was_in_fade_window_ = false;
 }
 
 void WavetableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
   frame.wavetable.phase_inc = global.pitch_inc;
-  // 32-bit exact mapping of 0..4095 -> 0..(7<<16), with rounding.
-  static constexpr uint32_t kGridMaxQ16 = 7U << 16;  // 458752
-  uint32_t x_pos_q16 = (uint32_t(global.macro_x) * kGridMaxQ16 + 2047U) / 4095U;
-  uint32_t y_pos_q16 = (uint32_t(global.macro_y) * kGridMaxQ16 + 2047U) / 4095U;
 
-  uint32_t x0 = x_pos_q16 >> 16;
-  uint32_t y0 = y_pos_q16 >> 16;
+  // Map 0..4095 to an 8x8 grid with pure shifts:
+  // cell = knob>>9 (0..7), intra-cell frac = knob&0x1ff (0..511).
+  uint32_t x_code = global.macro_x;
+  uint32_t y_code = global.macro_y;
+  if (x_code > 4095U) x_code = 4095U;
+  if (y_code > 4095U) y_code = 4095U;
+
+  uint32_t x0 = x_code >> 9;
+  uint32_t y0 = y_code >> 9;
   if (x0 > 7U) x0 = 7U;
   if (y0 > 7U) y0 = 7U;
-  uint32_t x1 = (x0 < 7U) ? (x0 + 1U) : 7U;
-  uint32_t y1 = (y0 < 7U) ? (y0 + 1U) : 7U;
+  uint32_t x1 = (x0 + 1U) & 0x7U;  // wrap 7->0 so last segment still interpolates
 
   frame.wavetable.i00 = uint8_t((y0 << 3) + x0);
   frame.wavetable.i10 = uint8_t((y0 << 3) + x1);
-  frame.wavetable.i01 = uint8_t((y1 << 3) + x0);
-  frame.wavetable.i11 = uint8_t((y1 << 3) + x1);
-  frame.wavetable.x_frac_q12 = uint16_t((x_pos_q16 & 0xFFFFU) >> 4);
-  frame.wavetable.y_frac_q12 = uint16_t((y_pos_q16 & 0xFFFFU) >> 4);
+  frame.wavetable.i01 = frame.wavetable.i00;  // unused in X-only morph mode
+  frame.wavetable.i11 = frame.wavetable.i10;  // unused in X-only morph mode
+  uint32_t x_frac512 = x_code & 0x1FFU;
+  uint32_t x_frac_q12 = x_frac512 << 3;  // 0..4088
+  if (x_frac512 == 0x1FFU) x_frac_q12 = 4096U;  // exact endpoint at cell boundary
+  frame.wavetable.x_frac_q12 = uint16_t(x_frac_q12);
+  frame.wavetable.y_frac_q12 = 0;
+  frame.wavetable.aa_level = 0;
   frame.wavetable.alt = global.mode_alt;
 }
 
@@ -51,10 +66,7 @@ void WavetableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out
   const int16_t (*table)[kSamplesPerWave] = w.alt ? wavetable_bank_b_64x512 : wavetable_bank_a_64x512;
   uint32_t i00 = w.i00;
   uint32_t i10 = w.i10;
-  uint32_t i01 = w.i01;
-  uint32_t i11 = w.i11;
   uint32_t x_frac = w.x_frac_q12;
-  uint32_t y_frac = w.y_frac_q12;
 
   auto sample_wave = [&](uint32_t wi, uint32_t sample_index, uint32_t sample_next, uint32_t sample_frac) -> int32_t {
     int32_t s1 = table[wi][sample_index];
@@ -62,32 +74,58 @@ void WavetableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out
     return LerpQ12(s1, s2, sample_frac);
   };
 
-  auto bilinear_from_phase = [&](uint32_t phase) -> int32_t {
+  auto x_morph_pair_from_phase = [&](uint8_t left, uint8_t right, uint32_t phase) -> int32_t {
     // 512-sample wave: top 9 bits are integer index, next 12 bits are fraction.
     uint32_t sample_index = phase >> 23;
     uint32_t sample_next = (sample_index + 1U) & 0x1FFU;
     uint32_t sample_frac = (phase >> 11) & 0x0FFFU;
 
-    int32_t s00 = sample_wave(i00, sample_index, sample_next, sample_frac);
-    int32_t s10 = sample_wave(i10, sample_index, sample_next, sample_frac);
-    int32_t s01 = sample_wave(i01, sample_index, sample_next, sample_frac);
-    int32_t s11 = sample_wave(i11, sample_index, sample_next, sample_frac);
-
-    int32_t top = LerpQ12(s00, s10, x_frac);
-    int32_t bot = LerpQ12(s01, s11, x_frac);
-    return LerpQ12(top, bot, y_frac);
+    int32_t s0 = sample_wave(left, sample_index, sample_next, sample_frac);
+    int32_t s1 = sample_wave(right, sample_index, sample_next, sample_frac);
+    int32_t fwd = LerpQ12(s0, s1, x_frac);
+    uint32_t x_pingpong = (x_frac <= 2048U) ? ((2048U - x_frac) << 1) : ((x_frac - 2048U) << 1);
+    if (x_pingpong > 4096U) x_pingpong = 4096U;
+    int32_t inv = LerpQ12(s0, s1, x_pingpong);
+    return (fwd << 16) | (inv & 0xFFFF);
   };
 
-  int32_t fwd = bilinear_from_phase(phase_) >> 4;
+  uint8_t new_l = uint8_t(i00);
+  uint8_t new_r = uint8_t(i10);
+  if (!out2_pair_valid_) {
+    out2_pair_valid_ = true;
+    out2_active_l_ = new_l;
+    out2_active_r_ = new_r;
+  }
+  if (new_l != out2_active_l_ || new_r != out2_active_r_) {
+    out2_pending_valid_ = true;
+    out2_pending_l_ = new_l;
+    out2_pending_r_ = new_r;
+  }
+
+  int32_t pair = x_morph_pair_from_phase(uint8_t(i00), uint8_t(i10), phase_);
+  int32_t fwd = (pair >> 16) >> 4;
   if (fwd > 2047) fwd = 2047;
   if (fwd < -2048) fwd = -2048;
 
-  // Use a small delayed inverted tap for out2 to avoid exact mono cancellation.
-  int32_t delayed = out1_delay_[1];
-  out1_delay_[1] = out1_delay_[0];
-  out1_delay_[0] = fwd;
+  int32_t active_pair = x_morph_pair_from_phase(out2_active_l_, out2_active_r_, phase_);
+  int32_t inv = int16_t(active_pair & 0xFFFF) >> 4;
+  bool in_fade_window = (phase_ >= kOut2FadeStartPhase);
+  if (out2_pending_valid_ && in_fade_window) {
+    int32_t pending_pair = x_morph_pair_from_phase(out2_pending_l_, out2_pending_r_, phase_);
+    int32_t inv_pending = int16_t(pending_pair & 0xFFFF) >> 4;
 
-  int32_t inv = -delayed;
+    uint32_t fade_t_q12 = (phase_ - kOut2FadeStartPhase) >> 18;  // quarter-cycle -> 0..4095
+    if (fade_t_q12 > 4096U) fade_t_q12 = 4096U;
+    inv = LerpQ12(inv, inv_pending, fade_t_q12);
+  }
+
+  if (out2_pending_valid_ && out2_was_in_fade_window_ && !in_fade_window) {
+    out2_active_l_ = out2_pending_l_;
+    out2_active_r_ = out2_pending_r_;
+    out2_pending_valid_ = false;
+  }
+  out2_was_in_fade_window_ = in_fade_window;
+
   if (inv > 2047) inv = 2047;
   if (inv < -2048) inv = -2048;
 

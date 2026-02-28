@@ -58,6 +58,7 @@ struct WavetableControlFrame {
   uint8_t i10;
   uint8_t i01;
   uint8_t i11;
+  uint8_t aa_level;
   uint16_t x_frac_q12;
   uint16_t y_frac_q12;
   bool alt;

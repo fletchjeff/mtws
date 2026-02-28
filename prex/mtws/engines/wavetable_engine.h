@@ -15,9 +15,16 @@ class WavetableEngine : public EngineInterface {
  private:
   static constexpr uint32_t kNumWaveforms = 64;
   static constexpr uint32_t kSamplesPerWave = 512;
+  static constexpr uint32_t kOut2FadeStartPhase = 0xC0000000U;  // last quarter-cycle
 
   uint32_t phase_;
-  int32_t out1_delay_[2];
+  bool out2_pair_valid_;
+  uint8_t out2_active_l_;
+  uint8_t out2_active_r_;
+  bool out2_pending_valid_;
+  uint8_t out2_pending_l_;
+  uint8_t out2_pending_r_;
+  bool out2_was_in_fade_window_;
 };
 
 }  // namespace mtws
