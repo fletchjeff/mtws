@@ -164,19 +164,29 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
 void AdditiveEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const AdditiveControlFrame& in = frame.additive;
 
-  int32_t sum = 0;
+  int32_t sum_odd = 0;
+  int32_t sum_even = 0;
   for (int i = 0; i < kNumAdditiveVoices; ++i) {
     phases_[i] += in.voice_phase_increment[i];
     int32_t s = lut_->LookupLinear(phases_[i]);
-    sum += (s * in.voice_gain_q12[i]) >> 12;
+    int32_t voice = (s * in.voice_gain_q12[i]) >> 12;
+    if ((i & 1) == 0) {
+      sum_odd += voice;
+    } else {
+      sum_even += voice;
+    }
   }
 
-  int32_t out = int32_t((int64_t(sum) * in.mix_norm_q12) >> 12);
-  if (out > 2047) out = 2047;
-  if (out < -2048) out = -2048;
+  int32_t odd_out = int32_t((int64_t(sum_odd) * in.mix_norm_q12) >> 12);
+  int32_t even_out = int32_t((int64_t(sum_even) * in.mix_norm_q12) >> 12);
 
-  out1 = out;
-  out2 = out;
+  if (odd_out > 2047) odd_out = 2047;
+  if (odd_out < -2048) odd_out = -2048;
+  if (even_out > 2047) even_out = 2047;
+  if (even_out < -2048) even_out = -2048;
+
+  out1 = odd_out;
+  out2 = even_out;
 }
 
 }  // namespace mtws

@@ -13,10 +13,11 @@ class WavetableEngine : public EngineInterface {
   void RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) override;
 
  private:
-  static constexpr uint32_t kNumWaveforms = 60;
-  static constexpr uint32_t kSamplesPerWave = 600;
+  static constexpr uint32_t kNumWaveforms = 64;
+  static constexpr uint32_t kSamplesPerWave = 512;
 
   uint32_t phase_;
+  int32_t out1_delay_[2];
 };
 
 }  // namespace mtws

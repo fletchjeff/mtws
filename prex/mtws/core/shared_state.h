@@ -54,8 +54,12 @@ struct AdditiveControlFrame {
 
 struct WavetableControlFrame {
   uint32_t phase_inc;
-  uint32_t wave_pos_q16;
-  uint16_t macro_y;
+  uint8_t i00;
+  uint8_t i10;
+  uint8_t i01;
+  uint8_t i11;
+  uint16_t x_frac_q12;
+  uint16_t y_frac_q12;
   bool alt;
 };
 
