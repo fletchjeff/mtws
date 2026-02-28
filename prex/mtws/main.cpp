@@ -1,5 +1,7 @@
 #include "ComputerCard.h"
+#include "hardware/clocks.h"
 #include "hardware/sync.h"
+#include "hardware/vreg.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
 
@@ -251,6 +253,10 @@ MTWSApp* MTWSApp::instance_ = nullptr;
 }  // namespace mtws
 
 int main() {
+  vreg_set_voltage(VREG_VOLTAGE_1_15);
+  sleep_ms(10);
+  set_sys_clock_khz(200000, true);
+
   mtws::MTWSApp app;
   app.Run();
 }
