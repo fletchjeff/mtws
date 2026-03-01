@@ -23,7 +23,8 @@ class AdditiveEngine : public EngineInterface {
   static constexpr int kRatioSmoothShift = 3;
   static constexpr int kGainSmoothShift = 3;
   static constexpr int kRenderSumShift = 4;  // Fixed headroom for odd/even bus sums.
-  static constexpr uint32_t kAdditiveMasterGainQ12 = 65536U;  // Aggressive target makeup, auto-capped per frame.
+  static constexpr uint32_t kAdditiveMasterGainQ12 = 32768U;  // Master makeup target, auto-capped per frame.
+  static constexpr uint32_t kUniformPartialGainQ12 = 8192U;   // Uniform per-partial gain (2x).
 
   inline int32_t HarmonicRatioQ16(int i) const { return int32_t((i + 1) << 16); }
 

@@ -141,7 +141,10 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
       if (smoothed_gain_q12_[i] < 0) smoothed_gain_q12_[i] = 0;
       if (smoothed_gain_q12_[i] > int32_t(kUnityQ12)) smoothed_gain_q12_[i] = int32_t(kUnityQ12);
 
-      out.voice_gain_q12[i] = smoothed_gain_q12_[i];
+      int32_t scaled_gain_q12 =
+          int32_t((int64_t(smoothed_gain_q12_[i]) * int32_t(kUniformPartialGainQ12) + 2048) >> 12);
+      if (scaled_gain_q12 < 0) scaled_gain_q12 = 0;
+      out.voice_gain_q12[i] = scaled_gain_q12;
     }
     uint32_t g_q12 = uint32_t(out.voice_gain_q12[i]);
     if ((i & 1) == 0) {
