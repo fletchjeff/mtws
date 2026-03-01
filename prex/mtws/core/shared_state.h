@@ -5,7 +5,8 @@
 namespace mtws {
 
 constexpr uint8_t kNumOscillatorSlots = 6;
-constexpr uint8_t kNumAdditiveVoices = 16;
+constexpr uint8_t kNumCumulusVoices = 16;
+constexpr uint8_t kNumSawsomeVoices = 7;
 
 struct UISnapshot {
   uint16_t knob_main;
@@ -46,13 +47,21 @@ struct GlobalControlFrame {
   uint32_t note_on_counter;
 };
 
-struct AdditiveControlFrame {
-  uint32_t voice_phase_increment[kNumAdditiveVoices];
-  int32_t voice_gain_q12[kNumAdditiveVoices];
-  int32_t mix_norm_q12;
+struct SawsomeControlFrame {
+  uint32_t voice_phase_increment[kNumSawsomeVoices];
+  int16_t voice_gain_l_q12[kNumSawsomeVoices];
+  int16_t voice_gain_r_q12[kNumSawsomeVoices];
+  bool alt;
 };
 
-struct WavetableControlFrame {
+struct BenderControlFrame {
+  uint32_t phase_increment;
+  uint16_t macro_x;
+  uint16_t macro_y;
+  bool alt;
+};
+
+struct FloatableControlFrame {
   uint32_t phase_inc;
   uint8_t i00;
   uint8_t i10;
@@ -64,18 +73,36 @@ struct WavetableControlFrame {
   bool alt;
 };
 
-struct PlaceholderControlFrame {
-  uint32_t phase_inc;
-  uint16_t macro_x;
-  uint16_t macro_y;
-  uint8_t kind;
+struct CumulusControlFrame {
+  uint32_t voice_phase_increment[kNumCumulusVoices];
+  int32_t voice_gain_q12[kNumCumulusVoices];
+  int32_t mix_norm_q12;
+};
+
+struct LosengeControlFrame {
+  uint32_t phase_increment;
+  uint16_t out1_f1_q15;
+  uint16_t out1_f2_q15;
+  uint16_t out2_f1_q15;
+  uint16_t out2_f2_q15;
+  uint16_t damping_q12;
+  bool alt;
+};
+
+struct DinSumControlFrame {
+  uint16_t low_f_q15;
+  uint16_t high_f_q15;
+  uint16_t damping_q12;
   bool alt;
 };
 
 struct EngineControlFrame {
-  AdditiveControlFrame additive;
-  WavetableControlFrame wavetable;
-  PlaceholderControlFrame placeholder;
+  SawsomeControlFrame sawsome;
+  BenderControlFrame bender;
+  FloatableControlFrame floatable;
+  CumulusControlFrame cumulus;
+  LosengeControlFrame losenge;
+  DinSumControlFrame din_sum;
 };
 
 struct ControlFrame {

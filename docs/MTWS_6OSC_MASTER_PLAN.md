@@ -4,12 +4,12 @@
 Unify the project into a single modular `mtws` firmware with 6 oscillator slots, global USB MIDI device input, multicore control offload, and shared control/audio behavior.
 
 ## Slot Map
-1. Virtual Analogue (placeholder)
-2. Wavetable (rebuilt)
-3. Additive (ported from optimized implementation)
-4. Wave Shaping (placeholder)
-5. Formant/Voice (placeholder)
-6. Filtered Noise (placeholder)
+1. sawsome
+2. bender
+3. floatable
+4. cumulus
+5. losenge
+6. din_sum
 
 ## Locked Behavior
 - Z down (momentary): increments slot index with wrap.
@@ -26,7 +26,7 @@ Unify the project into a single modular `mtws` firmware with 6 oscillator slots,
 ## Progress Checklist
 - [x] Rename local folder `mtws_additive` -> `mtws`
 - [x] Update root agent docs to `mtws` naming
-- [x] Add new `mtws` CMake target while retaining `additive` and `wavetable`
+- [x] Add new `mtws` CMake target
 - [x] Create modular `prex/mtws` source layout
 - [x] Add shared control/frame types (`UISnapshot`, `MidiState`, `GlobalControlFrame`, `EngineControlFrame`)
 - [x] Add engine interface + slot registry
@@ -34,14 +34,16 @@ Unify the project into a single modular `mtws` firmware with 6 oscillator slots,
 - [x] Implement core0 render host + slot switch edge detect + crossfade
 - [x] Implement selected-slot LED behavior + MIDI note flash pulse
 - [x] Implement CVOut1 MIDI note tracking (hold last)
-- [x] Implement placeholder oscillator modules with audible alt variants
-- [x] Port additive engine into slot 3 with control/render split
-- [x] Rebuild wavetable engine in slot 2 using fixed-point render path
+- [x] Replace placeholder dispatch with concrete engine classes (`sawsome`, `bender`, `losenge`, `din_sum`)
+- [x] Rename wavetable/additive integration engines to `floatable` and `cumulus`
+- [x] Add standalone per-engine targets (`sawsome`, `bender`, `floatable`, `cumulus`, `losenge`, `din_sum`)
+- [x] Add standalone shared scaffold (`prex/solo_common`) with core1 control/core0 audio split
+- [x] Add per-engine docs in `docs/engines/`
 - [x] Apply CV2 VCA post-engine per output bus
 - [ ] Build/flash validation on hardware for all acceptance tests
 
 ## Acceptance Test Matrix
-- [ ] `mtws`, `additive`, and `wavetable` build cleanly.
+- [x] `mtws`, `sawsome`, `bender`, `floatable`, `cumulus`, `losenge`, and `din_sum` build cleanly.
 - [ ] LEDs show selected slot correctly.
 - [ ] Z-down cycles slots 1..6 with wrap.
 - [ ] Slot crossfade is click-safe.
@@ -53,6 +55,6 @@ Unify the project into a single modular `mtws` firmware with 6 oscillator slots,
 - [ ] AudioIn1/2 connected path modulates X/Y with knob attenuation.
 - [ ] AudioIn1/2 disconnected path uses knob-only X/Y.
 - [ ] CVIn2 controls output level when connected; unity when disconnected.
-- [ ] Additive slot behavior matches existing optimized baseline.
-- [ ] Wavetable slot functions under shared global control path.
+- [ ] Cumulus slot behavior matches existing optimized baseline.
+- [ ] Floatable slot functions under shared global control path.
 - [ ] Stable under simultaneous MIDI + switching + control movement.

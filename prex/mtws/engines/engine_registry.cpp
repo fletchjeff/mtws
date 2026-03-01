@@ -3,19 +3,19 @@
 namespace mtws {
 
 EngineRegistry::EngineRegistry(SineLUT* lut)
-    : va_placeholder_(lut, PlaceholderEngine::VirtualAnalogue),
-      wavetable_(),
-      additive_(lut),
-      waveshaping_placeholder_(lut, PlaceholderEngine::WaveShaping),
-      formant_placeholder_(lut, PlaceholderEngine::Formant),
-      filtered_noise_placeholder_(lut, PlaceholderEngine::FilteredNoise),
+    : sawsome_(),
+      bender_(lut),
+      floatable_(),
+      cumulus_(lut),
+      losenge_(),
+      din_sum_(),
       slots_{
-          &va_placeholder_,
-          &wavetable_,
-          &additive_,
-          &waveshaping_placeholder_,
-          &formant_placeholder_,
-          &filtered_noise_placeholder_,
+          &sawsome_,
+          &bender_,
+          &floatable_,
+          &cumulus_,
+          &losenge_,
+          &din_sum_,
       } {}
 
 void EngineRegistry::Init() {

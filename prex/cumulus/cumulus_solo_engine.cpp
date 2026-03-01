@@ -1,54 +1,41 @@
-#include "prex/mtws/engines/additive_engine.h"
+#include "prex/cumulus/cumulus_solo_engine.h"
 
-namespace mtws {
+namespace {
+inline uint32_t ToQ12(uint16_t v) { return (v >= 4095U) ? 4096U : uint32_t(v); }
+}  // namespace
 
-AdditiveEngine::AdditiveEngine(SineLUT* lut) : lut_(lut) {
+CumulusSoloEngine::CumulusSoloEngine(mtws::SineLUT* lut) : lut_(lut) {
   Init();
 }
 
-void AdditiveEngine::Init() {
-  for (int i = 0; i < kNumAdditiveVoices; ++i) {
+void CumulusSoloEngine::Init() {
+  for (int i = 0; i < 16; ++i) {
     phases_[i] = 0;
     smoothed_ratio_q16_[i] = HarmonicRatioQ16(i);
     smoothed_gain_q12_[i] = int32_t(kUnityQ12 / uint32_t(i + 1));
   }
 }
 
-void AdditiveEngine::OnSelected() {
-  // Keep phase continuity to avoid clicks when re-entering this engine.
+int32_t CumulusSoloEngine::Clamp12(int32_t v) {
+  if (v > 2047) return 2047;
+  if (v < -2048) return -2048;
+  return v;
 }
 
-int32_t AdditiveEngine::CentroidBaseGainQ12(int partial_index, uint32_t centroid_q12) {
-  uint32_t pos_q12 = uint32_t(partial_index) << 12;
-  uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
-  uint32_t denom_q12 = kUnityQ12 + d_q12;
-  uint64_t numer = uint64_t(kUnityQ12) * kUnityQ12;
-  return int32_t((numer + (denom_q12 >> 1)) / denom_q12);
-}
-
-int32_t AdditiveEngine::CentroidNarrowGainQ12(int partial_index, uint32_t centroid_q12) {
-  uint32_t pos_q12 = uint32_t(partial_index) << 12;
-  uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
-  if (d_q12 >= kUnityQ12) return 0;
-  return int32_t(kUnityQ12 - d_q12);
-}
-
-int32_t AdditiveEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
+int32_t CumulusSoloEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
   if (t_q12 > kUnityQ12) t_q12 = kUnityQ12;
   return int32_t((int64_t(a) * int32_t(kUnityQ12 - t_q12) + int64_t(b) * int32_t(t_q12)) >> 12);
 }
 
-int32_t AdditiveEngine::SmoothToward(int32_t current, int32_t target, int shift) {
+int32_t CumulusSoloEngine::SmoothToward(int32_t current, int32_t target, int shift) {
   if (shift <= 0) return target;
   int32_t delta = target - current;
   int32_t step = delta >> shift;
-  if (step == 0 && delta != 0) {
-    step = (delta > 0) ? 1 : -1;
-  }
+  if (step == 0 && delta != 0) step = (delta > 0) ? 1 : -1;
   return current + step;
 }
 
-int32_t AdditiveEngine::FoldReflectQ16(int32_t x, int32_t lo, int32_t hi) {
+int32_t CumulusSoloEngine::FoldReflectQ16(int32_t x, int32_t lo, int32_t hi) {
   int64_t span = int64_t(hi) - int64_t(lo);
   if (span <= 0) return lo;
   int64_t period = span << 1;
@@ -58,9 +45,23 @@ int32_t AdditiveEngine::FoldReflectQ16(int32_t x, int32_t lo, int32_t hi) {
   return int32_t(int64_t(lo) + t);
 }
 
-int32_t AdditiveEngine::ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y) {
-  if (knob_y > 4095U) knob_y = 4095U;
+int32_t CumulusSoloEngine::CentroidBaseGainQ12(int partial_index, uint32_t centroid_q12) {
+  uint32_t pos_q12 = uint32_t(partial_index) << 12;
+  uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
+  uint32_t denom_q12 = kUnityQ12 + d_q12;
+  uint64_t numer = uint64_t(kUnityQ12) * kUnityQ12;
+  return int32_t((numer + (denom_q12 >> 1)) / denom_q12);
+}
 
+int32_t CumulusSoloEngine::CentroidNarrowGainQ12(int partial_index, uint32_t centroid_q12) {
+  uint32_t pos_q12 = uint32_t(partial_index) << 12;
+  uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
+  if (d_q12 >= kUnityQ12) return 0;
+  return int32_t(kUnityQ12 - d_q12);
+}
+
+int32_t CumulusSoloEngine::ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y) {
+  if (knob_y > 4095U) knob_y = 4095U;
   int32_t g_base = CentroidBaseGainQ12(partial_index, centroid_q12);
   int32_t g_narrow = CentroidNarrowGainQ12(partial_index, centroid_q12);
 
@@ -74,16 +75,14 @@ int32_t AdditiveEngine::ShapedCentroidGainQ12(int partial_index, uint32_t centro
   return LerpQ12(g_base, int32_t(kUnityQ12), t_q12);
 }
 
-void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
-  AdditiveControlFrame& out = frame.additive;
-
-  uint32_t knob_x = global.macro_x;
-  uint32_t knob_y = global.macro_y;
-  uint32_t base_inc = global.pitch_inc;
-  bool alt_mode = global.mode_alt;
+void CumulusSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
+  uint32_t knob_x = control.macro_x;
+  uint32_t knob_y = control.macro_y;
+  uint32_t base_inc = control.pitch_inc;
+  bool alt_mode = control.alt;
 
   if (knob_x > 4095U) knob_x = 4095U;
-  uint32_t centroid_max_q12 = uint32_t(kNumAdditiveVoices - 1) << 12;
+  uint32_t centroid_max_q12 = uint32_t(16 - 1) << 12;
   uint32_t centroid_q12 = uint32_t((uint64_t(knob_x) * centroid_max_q12 + 2048U) >> 12);
   int32_t centroid_ratio_q16 = int32_t((1U << 16) + (centroid_q12 << 4));
 
@@ -91,7 +90,7 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
 
   uint32_t odd_gain_sum_q12 = 0;
   uint32_t even_gain_sum_q12 = 0;
-  for (int i = 0; i < kNumAdditiveVoices; ++i) {
+  for (int i = 0; i < 16; ++i) {
     int32_t target_ratio_q16 = HarmonicRatioQ16(i);
 
     if (alt_mode) {
@@ -129,7 +128,6 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
     out.voice_phase_increment[i] = uint32_t(voice_inc_64);
 
     if (voice_above_guard) {
-      // Hard mute above cutoff for diagnostic clarity.
       smoothed_gain_q12_[i] = 0;
       out.voice_gain_q12[i] = 0;
     } else {
@@ -141,11 +139,11 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
       if (smoothed_gain_q12_[i] < 0) smoothed_gain_q12_[i] = 0;
       if (smoothed_gain_q12_[i] > int32_t(kUnityQ12)) smoothed_gain_q12_[i] = int32_t(kUnityQ12);
 
-      int32_t scaled_gain_q12 =
-          int32_t((int64_t(smoothed_gain_q12_[i]) * int32_t(kUniformPartialGainQ12) + 2048) >> 12);
+      int32_t scaled_gain_q12 = int32_t((int64_t(smoothed_gain_q12_[i]) * int32_t(kUniformPartialGainQ12) + 2048) >> 12);
       if (scaled_gain_q12 < 0) scaled_gain_q12 = 0;
       out.voice_gain_q12[i] = scaled_gain_q12;
     }
+
     uint32_t g_q12 = uint32_t(out.voice_gain_q12[i]);
     if ((i & 1) == 0) {
       odd_gain_sum_q12 += g_q12;
@@ -156,32 +154,28 @@ void AdditiveEngine::ControlTick(const GlobalControlFrame& global, EngineControl
 
   uint32_t max_bus_gain_sum_q12 = (odd_gain_sum_q12 > even_gain_sum_q12) ? odd_gain_sum_q12 : even_gain_sum_q12;
   if (max_bus_gain_sum_q12 == 0U) {
-    out.mix_norm_q12 = int32_t(kAdditiveMasterGainQ12);
+    out.mix_norm_q12 = int32_t(kCumulusMasterGainQ12);
     return;
   }
 
-  // Conservative peak estimate for one bus:
-  // bus_peak ~= (2047 * sum(gains_q12) / 4096) / (1<<kRenderSumShift).
   uint32_t bus_peak_pre_mix = uint32_t((uint64_t(2047U) * max_bus_gain_sum_q12) >> 12);
   bus_peak_pre_mix >>= kRenderSumShift;
   if (bus_peak_pre_mix == 0U) bus_peak_pre_mix = 1U;
 
-  // Max safe Q12 multiplier so post-mix peak stays <= 2047.
-  uint32_t safe_mix_norm_q12 =
-      uint32_t(((uint64_t(2047U) << 12) + (bus_peak_pre_mix >> 1)) / uint64_t(bus_peak_pre_mix));
-  if (safe_mix_norm_q12 > kAdditiveMasterGainQ12) safe_mix_norm_q12 = kAdditiveMasterGainQ12;
+  uint32_t safe_mix_norm_q12 = uint32_t(((uint64_t(2047U) << 12) + (bus_peak_pre_mix >> 1)) / uint64_t(bus_peak_pre_mix));
+  if (safe_mix_norm_q12 > kCumulusMasterGainQ12) safe_mix_norm_q12 = kCumulusMasterGainQ12;
   out.mix_norm_q12 = int32_t(safe_mix_norm_q12);
 }
 
-void AdditiveEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
-  const AdditiveControlFrame& in = frame.additive;
-
+void CumulusSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2) {
   int32_t sum_odd = 0;
   int32_t sum_even = 0;
-  for (int i = 0; i < kNumAdditiveVoices; ++i) {
-    phases_[i] += in.voice_phase_increment[i];
+
+  for (int i = 0; i < 16; ++i) {
+    phases_[i] += frame.voice_phase_increment[i];
     int32_t s = lut_->LookupLinear(phases_[i]);
-    int32_t voice = (s * in.voice_gain_q12[i]) >> 12;
+    int32_t voice = int32_t((int64_t(s) * frame.voice_gain_q12[i]) >> 12);
+
     if ((i & 1) == 0) {
       sum_odd += voice;
     } else {
@@ -192,16 +186,6 @@ void AdditiveEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1
   int32_t odd_bus = sum_odd >> kRenderSumShift;
   int32_t even_bus = sum_even >> kRenderSumShift;
 
-  int32_t odd_out = int32_t((int64_t(odd_bus) * in.mix_norm_q12) >> 12);
-  int32_t even_out = int32_t((int64_t(even_bus) * in.mix_norm_q12) >> 12);
-
-  if (odd_out > 2047) odd_out = 2047;
-  if (odd_out < -2048) odd_out = -2048;
-  if (even_out > 2047) even_out = 2047;
-  if (even_out < -2048) even_out = -2048;
-
-  out1 = odd_out;
-  out2 = even_out;
+  out1 = Clamp12(int32_t((int64_t(odd_bus) * frame.mix_norm_q12) >> 12));
+  out2 = Clamp12(int32_t((int64_t(even_bus) * frame.mix_norm_q12) >> 12));
 }
-
-}  // namespace mtws

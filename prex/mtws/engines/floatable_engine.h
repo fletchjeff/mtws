@@ -4,9 +4,9 @@
 
 namespace mtws {
 
-class WavetableEngine : public EngineInterface {
+class FloatableEngine : public EngineInterface {
  public:
-  WavetableEngine();
+  FloatableEngine();
 
   void OnSelected() override;
   void ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) override;

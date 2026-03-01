@@ -5,9 +5,9 @@
 
 namespace mtws {
 
-class AdditiveEngine : public EngineInterface {
+class CumulusEngine : public EngineInterface {
  public:
-  explicit AdditiveEngine(SineLUT* lut);
+  explicit CumulusEngine(SineLUT* lut);
 
   void Init() override;
   void OnSelected() override;
@@ -23,7 +23,7 @@ class AdditiveEngine : public EngineInterface {
   static constexpr int kRatioSmoothShift = 3;
   static constexpr int kGainSmoothShift = 3;
   static constexpr int kRenderSumShift = 4;  // Fixed headroom for odd/even bus sums.
-  static constexpr uint32_t kAdditiveMasterGainQ12 = 32768U;  // Master makeup target, auto-capped per frame.
+  static constexpr uint32_t kCumulusMasterGainQ12 = 32768U;  // Master makeup target, auto-capped per frame.
   static constexpr uint32_t kUniformPartialGainQ12 = 8192U;   // Uniform per-partial gain (2x).
 
   inline int32_t HarmonicRatioQ16(int i) const { return int32_t((i + 1) << 16); }
@@ -36,9 +36,9 @@ class AdditiveEngine : public EngineInterface {
   static int32_t ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y);
 
   SineLUT* lut_;
-  uint32_t phases_[kNumAdditiveVoices];
-  int32_t smoothed_ratio_q16_[kNumAdditiveVoices];
-  int32_t smoothed_gain_q12_[kNumAdditiveVoices];
+  uint32_t phases_[kNumCumulusVoices];
+  int32_t smoothed_ratio_q16_[kNumCumulusVoices];
+  int32_t smoothed_gain_q12_[kNumCumulusVoices];
 };
 
 }  // namespace mtws

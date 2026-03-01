@@ -1,4 +1,4 @@
-#include "prex/mtws/engines/wavetable_engine.h"
+#include "prex/mtws/engines/floatable_engine.h"
 
 #include "prex/mtws/wavetables/wavetable_bank_a_64x512.h"
 #include "prex/mtws/wavetables/wavetable_bank_b_64x512.h"
@@ -12,7 +12,7 @@ inline int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
 }
 }  // namespace
 
-WavetableEngine::WavetableEngine()
+FloatableEngine::FloatableEngine()
     : phase_(0),
       out2_pair_valid_(false),
       out2_active_l_(0),
@@ -22,15 +22,15 @@ WavetableEngine::WavetableEngine()
       out2_pending_r_(0),
       out2_was_in_fade_window_(false) {}
 
-void WavetableEngine::OnSelected() {
+void FloatableEngine::OnSelected() {
   // Keep phase continuity for smooth transitions.
   out2_pair_valid_ = false;
   out2_pending_valid_ = false;
   out2_was_in_fade_window_ = false;
 }
 
-void WavetableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
-  frame.wavetable.phase_inc = global.pitch_inc;
+void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
+  frame.floatable.phase_inc = global.pitch_inc;
 
   // Map 0..4095 to an 8x8 grid with pure shifts:
   // cell = knob>>9 (0..7), intra-cell frac = knob&0x1ff (0..511).
@@ -45,21 +45,21 @@ void WavetableEngine::ControlTick(const GlobalControlFrame& global, EngineContro
   if (y0 > 7U) y0 = 7U;
   uint32_t x1 = (x0 + 1U) & 0x7U;  // wrap 7->0 so last segment still interpolates
 
-  frame.wavetable.i00 = uint8_t((y0 << 3) + x0);
-  frame.wavetable.i10 = uint8_t((y0 << 3) + x1);
-  frame.wavetable.i01 = frame.wavetable.i00;  // unused in X-only morph mode
-  frame.wavetable.i11 = frame.wavetable.i10;  // unused in X-only morph mode
+  frame.floatable.i00 = uint8_t((y0 << 3) + x0);
+  frame.floatable.i10 = uint8_t((y0 << 3) + x1);
+  frame.floatable.i01 = frame.floatable.i00;  // unused in X-only morph mode
+  frame.floatable.i11 = frame.floatable.i10;  // unused in X-only morph mode
   uint32_t x_frac512 = x_code & 0x1FFU;
   uint32_t x_frac_q12 = x_frac512 << 3;  // 0..4088
   if (x_frac512 == 0x1FFU) x_frac_q12 = 4096U;  // exact endpoint at cell boundary
-  frame.wavetable.x_frac_q12 = uint16_t(x_frac_q12);
-  frame.wavetable.y_frac_q12 = 0;
-  frame.wavetable.aa_level = 0;
-  frame.wavetable.alt = global.mode_alt;
+  frame.floatable.x_frac_q12 = uint16_t(x_frac_q12);
+  frame.floatable.y_frac_q12 = 0;
+  frame.floatable.aa_level = 0;
+  frame.floatable.alt = global.mode_alt;
 }
 
-void WavetableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
-  const WavetableControlFrame& w = frame.wavetable;
+void FloatableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+  const FloatableControlFrame& w = frame.floatable;
 
   phase_ += w.phase_inc;
 
