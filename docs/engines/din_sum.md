@@ -7,7 +7,7 @@ Filtered-noise oscillator scaffold with pitch-centered split filters and mode-de
 - Main: pitch reference (10Hz..10kHz)
 - X: shared filter Q/damping (or AudioIn1 attenuator)
 - Y: distance from center frequency (or AudioIn2 attenuator)
-- Z Up: Alt (pink-ish source + HP/LP split)
+- Z Up: Alt (blue noise! source + HP/LP split)
 - Z Middle: Normal (white source + BP/BP split)
 - Z Down: ignored in standalone
 - Out1: filter path 1
