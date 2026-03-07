@@ -16,13 +16,19 @@ class BenderEngine : public EngineInterface {
 
  private:
   static int32_t Clamp12(int32_t v);
-  static int32_t TriangleQ12(uint32_t phase);
-  static int32_t SawQ12(uint32_t phase);
+  static int32_t FoldFunction(int32_t x);
+  static int32_t FoldIntegral(int32_t x);
+  static int32_t AntiAliasedFold(int32_t x, int32_t& last_integral, int32_t& last_input);
+  static int32_t CrushFunction(int32_t x, int32_t amount);
   static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
-  static int32_t Fold12(int32_t x);
 
   SineLUT* lut_;
   uint32_t phase_;
+  int32_t last_fold_integral_pre_;
+  int32_t last_fold_input_pre_;
+  int32_t last_fold_integral_post_;
+  int32_t last_fold_input_post_;
+  bool last_alt_;
 };
 
 }  // namespace mtws

@@ -56,8 +56,9 @@ struct SawsomeControlFrame {
 
 struct BenderControlFrame {
   uint32_t phase_increment;
-  uint16_t macro_x;
-  uint16_t macro_y;
+  uint16_t fold_drive_q7;
+  uint16_t fold_mix_q12;
+  int16_t crush_amount;
   bool alt;
 };
 

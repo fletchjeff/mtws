@@ -4,19 +4,22 @@
 #include "prex/solo_common/solo_control_router.h"
 
 // BenderSoloEngine generates two related wave-shaping voices from one phase
-// accumulator. The control path builds a per-block RenderFrame, and the audio
-// path only consumes cached fixed-point values to keep ProcessSample() cheap.
+// accumulator. The current reset pass reduces the engine to one sine-LUT voice
+// with two parallel evaluators: a Utility-Pair-style antialiased wavefolder on
+// Out1 and a Utility-Pair-style bitcrusher on Out2.
 class BenderSoloEngine {
  public:
   // Precomputed per-block parameters consumed at audio rate.
   struct RenderFrame {
     // Base oscillator phase increment in 0.32 phase units/sample.
     uint32_t phase_increment;
-    // Macro X from control router in 0..4095.
-    uint16_t macro_x;
-    // Macro Y from control router in 0..4095.
-    uint16_t macro_y;
-    // Alternate algorithm switch.
+    // Fold drive in Q7 where 128 = 1.0x input amplitude.
+    uint16_t fold_drive_q7;
+    // Dry/wet fold mix in Q12 where 0 = dry sine and 4096 = fully folded.
+    uint16_t fold_mix_q12;
+    // Bitcrusher step size in signed-12-bit sample units.
+    int16_t crush_amount;
+    // Alternate routing switch.
     bool alt;
   };
 
@@ -33,17 +36,29 @@ class BenderSoloEngine {
  private:
   // Hard-clamps a sample to signed 12-bit audio range.
   static int32_t Clamp12(int32_t v);
-  // Generates a bipolar triangle wave in signed 12-bit range from 0.32 phase.
-  static int32_t TriangleQ12(uint32_t phase);
-  // Generates a bipolar saw wave in signed 12-bit range from 0.32 phase.
-  static int32_t SawQ12(uint32_t phase);
-  // Linear interpolation with 12-bit fraction where t_q12 is 0..4096.
-  static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
-  // Reflective fold that keeps values in signed 12-bit range.
-  static int32_t Fold12(int32_t x);
+  // Utility-Pair fold function: triangle-shaped transfer with 8192-sample period.
+  static int32_t FoldFunction(int32_t x);
+  // Integral of the fold function used for antiderivative antialiasing.
+  static int32_t FoldIntegral(int32_t x);
+  // Derivative-based antialiased fold using the provided previous input state.
+  static int32_t AntiAliasedFold(int32_t x, int32_t& last_integral, int32_t& last_input);
+  // Utility-Pair quantizer/bitcrusher transfer.
+  static int32_t CrushFunction(int32_t x, int32_t amount);
+  // Linear interpolation in Q12 for dry/wet output mixing.
+  static int32_t LerpQ12(int32_t dry, int32_t wet, uint32_t mix_q12);
 
   // Shared sine lookup table (owned by caller).
   mtws::SineLUT* lut_;
   // Oscillator phase accumulator in 0.32 format.
   uint32_t phase_;
+  // Previous fold integral sample for the sine->fold path.
+  int32_t last_fold_integral_pre_;
+  // Previous fold input sample for the sine->fold path.
+  int32_t last_fold_input_pre_;
+  // Previous fold integral sample for the crush->fold path.
+  int32_t last_fold_integral_post_;
+  // Previous fold input sample for the crush->fold path.
+  int32_t last_fold_input_post_;
+  // Tracks the last mode so fold histories can be reset on routing changes.
+  bool last_alt_;
 };
