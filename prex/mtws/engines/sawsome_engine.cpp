@@ -5,7 +5,7 @@ namespace mtws {
 namespace {
 constexpr int32_t kUnityQ12 = 4096;
 constexpr int32_t kDetuneOffsetQ16[kNumSawsomeVoices] = {
-    -3932, -2621, -1311, 0, 1311, 2621, 3932,
+    -3920, -2370, -910, 0, 1040, 2610, 3550,
 };
 constexpr int32_t kPanQ12[kNumSawsomeVoices] = {
     -3686, -2458, -1229, 0, 1229, 2458, 3686,
@@ -13,10 +13,36 @@ constexpr int32_t kPanQ12[kNumSawsomeVoices] = {
 constexpr int32_t kGainQ12[kNumSawsomeVoices] = {
     2048, 2867, 3482, 4096, 3482, 2867, 2048,
 };
+constexpr uint8_t kCenterVoice = 3;
+constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
+constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 inline uint32_t U12ToQ12(uint16_t v) {
   if (v >= 4095U) return 4096U;
   return uint32_t(v);
+}
+
+// Integer square root for 64-bit inputs. Used at control rate to derive a
+// bounded makeup gain while keeping the engine path on integer math.
+uint32_t IntegerSqrt64(uint64_t v) {
+  uint64_t bit = 1ULL << 62;
+  uint64_t result = 0;
+
+  while (bit > v) {
+    bit >>= 2;
+  }
+
+  while (bit != 0) {
+    if (v >= result + bit) {
+      v -= result + bit;
+      result = (result >> 1) + bit;
+    } else {
+      result >>= 1;
+    }
+    bit >>= 2;
+  }
+
+  return uint32_t(result);
 }
 }  // namespace
 
@@ -40,7 +66,30 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
 
   const uint32_t width_q12 = U12ToQ12(global.macro_x);
   const uint32_t detune_q12 = U12ToQ12(global.macro_y);
+  uint32_t active_gain_q12[kNumSawsomeVoices];
   out.alt = global.mode_alt;
+
+  // Fade side voices in with detune so full CCW collapses toward the center
+  // oscillator while full CW restores the original 7-voice spread.
+  uint32_t active_power_q24 = 0;
+  for (uint8_t i = 0; i < kNumSawsomeVoices; ++i) {
+    uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
+    if (i != kCenterVoice) {
+      voice_gain_q12 = uint32_t((uint64_t(voice_gain_q12) * detune_q12 + 2048U) >> 12);
+    }
+    active_gain_q12[i] = voice_gain_q12;
+    active_power_q24 += voice_gain_q12 * voice_gain_q12;
+  }
+
+  // Approximate constant-energy compensation based on the active voice power.
+  // This keeps Y movement from sounding like a large level jump while leaving
+  // headroom protected by a fixed makeup ceiling.
+  uint32_t makeup_q12 = 4096U;
+  if (active_power_q24 > 0U) {
+    uint64_t makeup_squared_q24 = (uint64_t(kFullSpreadPowerQ24) << 24) / active_power_q24;
+    makeup_q12 = IntegerSqrt64(makeup_squared_q24);
+    if (makeup_q12 > kMaxMakeupQ12) makeup_q12 = kMaxMakeupQ12;
+  }
 
   for (uint8_t i = 0; i < kNumSawsomeVoices; ++i) {
     int32_t ratio_q16 = 65536 + int32_t((int64_t(kDetuneOffsetQ16[i]) * int32_t(detune_q12)) >> 12);
@@ -51,8 +100,9 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
     out.voice_phase_increment[i] = uint32_t(inc);
 
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
-    int32_t gain_l_q12 = int32_t((int64_t(kGainQ12[i]) * (kUnityQ12 - pan_q12)) >> 13);
-    int32_t gain_r_q12 = int32_t((int64_t(kGainQ12[i]) * (kUnityQ12 + pan_q12)) >> 13);
+    int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
+    int32_t gain_l_q12 = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 - pan_q12)) >> 13);
+    int32_t gain_r_q12 = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 + pan_q12)) >> 13);
 
     if (gain_l_q12 < 0) gain_l_q12 = 0;
     if (gain_r_q12 < 0) gain_r_q12 = 0;

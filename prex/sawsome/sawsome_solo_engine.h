@@ -12,9 +12,9 @@ class SawsomeSoloEngine {
   struct RenderFrame {
     // Per-voice oscillator increments in 0.32 phase units/sample.
     uint32_t phase_increment[7];
-    // Per-voice left gain in Q12.
+    // Per-voice left gain in Q12 after detune-dependent voice scaling.
     int16_t gain_l_q12[7];
-    // Per-voice right gain in Q12.
+    // Per-voice right gain in Q12 after detune-dependent voice scaling.
     int16_t gain_r_q12[7];
     // Alternate waveform switch: false=saw, true=triangle.
     bool alt;

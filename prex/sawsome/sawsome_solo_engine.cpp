@@ -1,15 +1,47 @@
 #include "prex/sawsome/sawsome_solo_engine.h"
 
 namespace {
-// Symmetric per-voice detune offsets around center voice in Q16 ratio space.
-constexpr int32_t kDetuneOffsetQ16[7] = {-3932, -2621, -1311, 0, 1311, 2621, 3932};
+// Uneven per-voice detune offsets around the center voice in Q16 ratio space.
+// The values are intentionally not perfect mirror pairs so the voice-pair beat
+// rates do not stack into one obvious cyclic swirl.
+constexpr int32_t kDetuneOffsetQ16[7] = {-3920, -2370, -910, 0, 1040, 2610, 3550};
 // Stereo pan positions (-1..+1 in Q12) for each voice.
 constexpr int32_t kPanQ12[7] = {-3686, -2458, -1229, 0, 1229, 2458, 3686};
 // Voice gain taper that emphasizes center voice while preserving side energy.
 constexpr int32_t kGainQ12[7] = {2048, 2867, 3482, 4096, 3482, 2867, 2048};
+// Center voice index in the symmetric 7-voice spread.
+constexpr uint8_t kCenterVoice = 3;
+// Sum of squared full-spread voice gains. Used as the reference for makeup gain.
+constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
+// Makeup gain ceiling in Q12. 2.0x is enough to recover nearly constant power
+// from center-only up to the current 7-voice spread without letting gain run away.
+constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 // Converts 0..4095 control values into Q12 interpolation range 0..4096.
 inline uint32_t ToQ12(uint16_t v) { return (v >= 4095U) ? 4096U : uint32_t(v); }
+
+// Integer square root for 64-bit inputs. Used at control rate to derive a
+// bounded makeup gain without introducing float math into the engine path.
+uint32_t IntegerSqrt64(uint64_t v) {
+  uint64_t bit = 1ULL << 62;
+  uint64_t result = 0;
+
+  while (bit > v) {
+    bit >>= 2;
+  }
+
+  while (bit != 0) {
+    if (v >= result + bit) {
+      v -= result + bit;
+      result = (result >> 1) + bit;
+    } else {
+      result >>= 1;
+    }
+    bit >>= 2;
+  }
+
+  return uint32_t(result);
+}
 }  // namespace
 
 // Initializes dependency and per-voice runtime state.
@@ -30,7 +62,31 @@ void SawsomeSoloEngine::Init() {
 void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   uint32_t width_q12 = ToQ12(control.macro_x);
   uint32_t detune_q12 = ToQ12(control.macro_y);
+  uint32_t active_gain_q12[7];
   out.alt = control.alt;
+
+  // Fade side voices in with detune so full CCW collapses to the center voice,
+  // while full CW restores the existing 7-voice gain distribution.
+  uint32_t active_power_q24 = 0;
+  for (uint8_t i = 0; i < 7; ++i) {
+    uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
+    if (i != kCenterVoice) {
+      voice_gain_q12 = uint32_t((uint64_t(voice_gain_q12) * detune_q12 + 2048U) >> 12);
+    }
+    active_gain_q12[i] = voice_gain_q12;
+    active_power_q24 += voice_gain_q12 * voice_gain_q12;
+  }
+
+  // Approximate constant-energy compensation: measure the active voice power,
+  // then apply a bounded amplitude makeup factor derived from the full-spread
+  // reference power. This keeps Y movement from sounding like a large volume
+  // jump while preserving headroom.
+  uint32_t makeup_q12 = 4096U;
+  if (active_power_q24 > 0U) {
+    uint64_t makeup_squared_q24 = (uint64_t(kFullSpreadPowerQ24) << 24) / active_power_q24;
+    makeup_q12 = IntegerSqrt64(makeup_squared_q24);
+    if (makeup_q12 > kMaxMakeupQ12) makeup_q12 = kMaxMakeupQ12;
+  }
 
   for (uint8_t i = 0; i < 7; ++i) {
     // Ratio = 1.0 + (voice detune offset * detune amount).
@@ -43,8 +99,9 @@ void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& contro
 
     // Pan law: width scales fixed voice pan positions, then convert to L/R gains.
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
-    int32_t gain_l = int32_t((int64_t(kGainQ12[i]) * (4096 - pan_q12)) >> 13);
-    int32_t gain_r = int32_t((int64_t(kGainQ12[i]) * (4096 + pan_q12)) >> 13);
+    int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
+    int32_t gain_l = int32_t((int64_t(voice_gain_q12) * (4096 - pan_q12)) >> 13);
+    int32_t gain_r = int32_t((int64_t(voice_gain_q12) * (4096 + pan_q12)) >> 13);
     if (gain_l < 0) gain_l = 0;
     if (gain_r < 0) gain_r = 0;
     out.gain_l_q12[i] = int16_t(gain_l);
