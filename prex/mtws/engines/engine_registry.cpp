@@ -7,7 +7,7 @@ EngineRegistry::EngineRegistry(SineLUT* lut)
       bender_(lut),
       floatable_(),
       cumulus_(lut),
-      losenge_(),
+      losenge_(lut),
       din_sum_(),
       slots_{
           &sawsome_,

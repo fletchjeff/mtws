@@ -3,109 +3,195 @@
 namespace mtws {
 
 namespace {
-inline uint16_t ToU12Q12(uint16_t v) {
-  return (v >= 4095U) ? 4096U : v;
+constexpr uint8_t kNumOutputs = 2;
+constexpr uint8_t kNumFormants = 3;
+constexpr uint8_t kNumVowelAnchors = 5;
+
+// Converts knob domain 0..4095 into interpolation-friendly Q12 0..4096.
+inline uint16_t ToU12Q12(uint16_t v) { return (v >= 4095U) ? 4096U : v; }
+
+// Holds the first three formants for one vowel plus their relative amplitudes.
+// These anchors mirror the solo losenge implementation so standalone and mtws
+// share the same vocal geometry.
+struct VowelAnchor {
+  uint16_t formant_hz[kNumFormants];
+  uint16_t formant_gain_q12[kNumFormants];
+};
+
+// Male anchor path derived from the supplied vocal-formant reference image.
+constexpr VowelAnchor kMaleAnchors[kNumVowelAnchors] = {
+    {{609U, 1000U, 2450U}, {4096U, 2052U, 1028U}},  // A
+    {{400U, 1700U, 2300U}, {4096U, 1454U, 1630U}},  // E
+    {{238U, 1741U, 2450U}, {4096U, 410U, 648U}},    // IY
+    {{325U, 700U, 2550U}, {4096U, 1028U, 205U}},    // O
+    {{415U, 1400U, 2200U}, {4096U, 1028U, 648U}},   // U
+};
+
+// Female anchor path inferred from the male table using average published
+// female/male formant ratios. This preserves the same vowel path while lifting
+// the formants into a female range for alt mode.
+constexpr VowelAnchor kFemaleAnchors[kNumVowelAnchors] = {
+    {{713U, 1180U, 2818U}, {4096U, 2052U, 1028U}},  // A
+    {{468U, 2006U, 2645U}, {4096U, 1454U, 1630U}},  // E
+    {{278U, 2054U, 2818U}, {4096U, 410U, 648U}},    // IY
+    {{380U, 826U, 2932U}, {4096U, 1028U, 205U}},    // O
+    {{486U, 1652U, 2530U}, {4096U, 1028U, 648U}},   // U
+};
+
+// Interpolates across the vowel path so X moves through named vowels instead of
+// arbitrary formant sweeps. Endpoint handling forces 4096 to the last anchor.
+VowelAnchor InterpolateVowelPath(const VowelAnchor (&anchors)[kNumVowelAnchors], uint16_t x_q12) {
+  uint32_t scaled = uint32_t(x_q12) * uint32_t(kNumVowelAnchors - 1U);
+  uint32_t index = scaled >> 12;
+  uint16_t frac = uint16_t(scaled & 0x0FFFU);
+
+  if (index >= uint32_t(kNumVowelAnchors - 1U)) {
+    index = kNumVowelAnchors - 2U;
+    frac = 4096U;
+  }
+
+  VowelAnchor out{};
+  const VowelAnchor& a = anchors[index];
+  const VowelAnchor& b = anchors[index + 1U];
+  for (uint8_t i = 0; i < kNumFormants; ++i) {
+    out.formant_hz[i] = uint16_t(uint32_t(a.formant_hz[i]) +
+                                 ((int32_t(b.formant_hz[i]) - int32_t(a.formant_hz[i])) * int32_t(frac) >> 12));
+    out.formant_gain_q12[i] =
+        uint16_t(uint32_t(a.formant_gain_q12[i]) +
+                 ((int32_t(b.formant_gain_q12[i]) - int32_t(a.formant_gain_q12[i])) * int32_t(frac) >> 12));
+  }
+  return out;
 }
 }  // namespace
 
-LosengeEngine::LosengeEngine()
-    : phase_(0), out1_a_{0, 0}, out1_b_{0, 0}, out2_a_{0, 0}, out2_b_{0, 0} {}
+// Initializes the engine and clears its phase state.
+LosengeEngine::LosengeEngine(SineLUT* lut) : lut_(lut), phase_(0), formant_phase_{{0, 0, 0}, {0, 0, 0}} {
+  Init();
+}
 
+// Resets the carrier and both output formant banks to the start of a cycle.
 void LosengeEngine::Init() {
   phase_ = 0;
-  out1_a_ = {0, 0};
-  out1_b_ = {0, 0};
-  out2_a_ = {0, 0};
-  out2_b_ = {0, 0};
+  for (uint8_t output = 0; output < kNumOutputs; ++output) {
+    for (uint8_t formant = 0; formant < kNumFormants; ++formant) {
+      formant_phase_[output][formant] = 0;
+    }
+  }
 }
 
+// Keeps the current oscillator state so slot changes crossfade smoothly.
 void LosengeEngine::OnSelected() {
-  // Keep phase continuity.
+  // Keep oscillator continuity.
 }
 
+// Clamps the sample to the signed 12-bit ComputerCard output range.
 int32_t LosengeEngine::Clamp12(int32_t v) {
   if (v > 2047) return 2047;
   if (v < -2048) return -2048;
   return v;
 }
 
-uint16_t LosengeEngine::HzToFQ15(uint32_t hz) {
-  if (hz < 20U) hz = 20U;
-  if (hz > 10000U) hz = 10000U;
-  uint32_t f_q15 = (hz * 32768U + 12000U) / 24000U;
-  if (f_q15 > 32767U) f_q15 = 32767U;
-  if (f_q15 < 32U) f_q15 = 32U;
-  return uint16_t(f_q15);
+// Converts Hz into a 0.32 phase increment for a 48kHz sample rate.
+// In plain language: one second of phase travel is 2^32 units, so the per-sample
+// step is hz / 48000 of that full cycle. This mirrors the solo engine exactly.
+uint32_t LosengeEngine::HzToPhaseIncrement(uint32_t hz) {
+  return uint32_t((uint64_t(hz) << 32) / 48000ULL);
 }
 
-uint32_t LosengeEngine::LerpU32(uint32_t a, uint32_t b, uint16_t t_u12) {
-  uint32_t t_q12 = (t_u12 >= 4095U) ? 4096U : uint32_t(t_u12);
-  return uint32_t(int64_t(a) + ((int64_t(b) - int64_t(a)) * int64_t(t_q12) >> 12));
+// Applies a Q12 tract-size shift to a formant frequency in Hz.
+// `shift_q12 = 4096` is neutral, values below it darken/lengthen the tract, and
+// values above it brighten/shorten the tract. The endpoint range is 0.5x..1.5x.
+uint32_t LosengeEngine::ApplyShiftQ12(uint16_t hz, uint16_t shift_q12) {
+  uint32_t shifted_hz = (uint32_t(hz) * uint32_t(shift_q12) + 2048U) >> 12;
+  if (shifted_hz < 40U) shifted_hz = 40U;
+  if (shifted_hz > 6000U) shifted_hz = 6000U;
+  return shifted_hz;
 }
 
-int32_t LosengeEngine::SawQ12(uint32_t phase) {
-  return int32_t((phase >> 20) & 0x0FFFU) - 2048;
-}
-
+// Generates a bipolar square in the signed 12-bit board domain.
 int32_t LosengeEngine::SquareQ12(uint32_t phase) {
   return (phase < 0x80000000U) ? 2047 : -2048;
 }
 
-int32_t LosengeEngine::SVFBandpass(int32_t in, uint16_t f_q15, uint16_t damping_q12, SVFState& state) {
-  int32_t hp = in - state.lp - int32_t((int64_t(damping_q12) * state.bp) >> 12);
-  state.bp += int32_t((int64_t(f_q15) * hp) >> 15);
-  state.lp += int32_t((int64_t(f_q15) * state.bp) >> 15);
-  return state.bp;
+// Mixes the three formant oscillators, applies the glottal envelope, and scales
+// the result by the output gain. The envelope and voice gain are both Q12.
+int32_t LosengeEngine::MixFormantsQ12(int32_t f1,
+                                      int32_t f2,
+                                      int32_t f3,
+                                      const uint16_t (&amplitudes_q12)[3],
+                                      uint16_t envelope_q12,
+                                      uint16_t voice_gain_q12) {
+  int64_t sum = int64_t(f1) * amplitudes_q12[0] + int64_t(f2) * amplitudes_q12[1] + int64_t(f3) * amplitudes_q12[2];
+  int32_t weighted = int32_t((sum + 2048) >> 12);
+  int32_t enveloped = int32_t((int64_t(weighted) * envelope_q12 + 2048) >> 12);
+  return int32_t((int64_t(enveloped) * voice_gain_q12 + 2048) >> 12);
 }
 
+// Converts global controls into a Braids-style vocal-oscillator frame.
+// Main sets pitch, X navigates named vowel anchors for Out1, Out2 uses the
+// inverse path position so the channels move oppositely without wrapping, Y
+// applies a shared formant shift, and alt switches to the female anchor set.
 void LosengeEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
   LosengeControlFrame& out = frame.losenge;
-
   out.phase_increment = global.pitch_inc;
-  out.alt = global.mode_alt;
-  out.damping_q12 = uint16_t(1800U + ((uint32_t(4095U - global.macro_x) * 1200U) >> 12));
 
-  uint16_t x = ToU12Q12(global.macro_x);
-  uint16_t y = ToU12Q12(global.macro_y);
+  const uint16_t x_q12 = ToU12Q12(global.macro_x);
+  const uint16_t out2_x_q12 = uint16_t(4096U - x_q12);
+  const VowelAnchor out1_vowel = global.mode_alt ? InterpolateVowelPath(kFemaleAnchors, x_q12)
+                                                 : InterpolateVowelPath(kMaleAnchors, x_q12);
+  const VowelAnchor out2_vowel = global.mode_alt ? InterpolateVowelPath(kFemaleAnchors, out2_x_q12)
+                                                 : InterpolateVowelPath(kMaleAnchors, out2_x_q12);
 
-  uint32_t o1_f1_hz;
-  uint32_t o1_f2_hz;
-  uint32_t o2_f1_hz;
-  uint32_t o2_f2_hz;
+  // Y is centered at 1.0x shift so the middle position sounds neutral. Full CCW
+  // is a larger/darker tract at 0.5x, and full CW is a smaller/brighter tract at
+  // about 1.5x. The formula is linear so the endpoints are predictable.
+  const int32_t shift_delta_q12 = ((int32_t(global.macro_y) - 2048) * 2048) >> 11;
+  const uint16_t shift_q12 = uint16_t(4096 + shift_delta_q12);
 
-  if (!out.alt) {
-    // Normal: saw with E->O and A->I formant maps.
-    o1_f1_hz = LerpU32(500U, 400U, x);
-    o1_f2_hz = LerpU32(1700U, 800U, x);
-    o2_f1_hz = LerpU32(700U, 300U, y);
-    o2_f2_hz = LerpU32(1100U, 2200U, y);
-  } else {
-    // Alt: square with U->O and A->E formant maps.
-    o1_f1_hz = LerpU32(350U, 400U, x);
-    o1_f2_hz = LerpU32(600U, 800U, x);
-    o2_f1_hz = LerpU32(700U, 500U, y);
-    o2_f2_hz = LerpU32(1100U, 1700U, y);
+  const VowelAnchor vowels[kNumOutputs] = {out1_vowel, out2_vowel};
+  for (uint8_t output = 0; output < kNumOutputs; ++output) {
+    for (uint8_t i = 0; i < kNumFormants; ++i) {
+      const uint32_t shifted_hz = ApplyShiftQ12(vowels[output].formant_hz[i], shift_q12);
+      out.formant_increment[output][i] = HzToPhaseIncrement(shifted_hz);
+      out.formant_amplitude_q12[output][i] = vowels[output].formant_gain_q12[i];
+    }
   }
 
-  out.out1_f1_q15 = HzToFQ15(o1_f1_hz);
-  out.out1_f2_q15 = HzToFQ15(o1_f2_hz);
-  out.out2_f1_q15 = HzToFQ15(o2_f1_hz);
-  out.out2_f2_q15 = HzToFQ15(o2_f2_hz);
+  // A fixed gain keeps the formant sum strong without hard-clipping every vowel.
+  out.voice_gain_q12 = 4608U;
 }
 
+// Renders one sample of the vocal oscillator with separate vowel positions per
+// output. The carrier phase defines pitch and resets both formant banks at each
+// glottal pulse, which is the main behavior borrowed from Braids/Twists VOWL.
 void LosengeEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const LosengeControlFrame& in = frame.losenge;
+  const uint32_t previous_phase = phase_;
   phase_ += in.phase_increment;
+  if (phase_ < previous_phase) {
+    for (uint8_t output = 0; output < kNumOutputs; ++output) {
+      for (uint8_t formant = 0; formant < kNumFormants; ++formant) {
+        formant_phase_[output][formant] = 0;
+      }
+    }
+  }
 
-  int32_t carrier = in.alt ? SquareQ12(phase_) : SawQ12(phase_);
+  const uint16_t envelope_q12 = uint16_t(4096U - ((phase_ >> 20) & 0x0FFFU));
+  int32_t outputs[kNumOutputs] = {0, 0};
+  for (uint8_t output = 0; output < kNumOutputs; ++output) {
+    formant_phase_[output][0] += in.formant_increment[output][0];
+    formant_phase_[output][1] += in.formant_increment[output][1];
+    formant_phase_[output][2] += in.formant_increment[output][2];
 
-  int32_t o1a = SVFBandpass(carrier, in.out1_f1_q15, in.damping_q12, out1_a_);
-  int32_t o1b = SVFBandpass(carrier, in.out1_f2_q15, in.damping_q12, out1_b_);
-  int32_t o2a = SVFBandpass(carrier, in.out2_f1_q15, in.damping_q12, out2_a_);
-  int32_t o2b = SVFBandpass(carrier, in.out2_f2_q15, in.damping_q12, out2_b_);
+    const int32_t formant1 = lut_->LookupLinear(formant_phase_[output][0]);
+    const int32_t formant2 = lut_->LookupLinear(formant_phase_[output][1]);
+    const int32_t formant3 = SquareQ12(formant_phase_[output][2]);
+    outputs[output] = MixFormantsQ12(
+        formant1, formant2, formant3, in.formant_amplitude_q12[output], envelope_q12, in.voice_gain_q12);
+  }
 
-  out1 = Clamp12((o1a + o1b) >> 1);
-  out2 = Clamp12((o2a + o2b) >> 1);
+  out1 = Clamp12(outputs[0]);
+  out2 = Clamp12(outputs[1]);
 }
 
 }  // namespace mtws

@@ -82,12 +82,9 @@ struct CumulusControlFrame {
 
 struct LosengeControlFrame {
   uint32_t phase_increment;
-  uint16_t out1_f1_q15;
-  uint16_t out1_f2_q15;
-  uint16_t out2_f1_q15;
-  uint16_t out2_f2_q15;
-  uint16_t damping_q12;
-  bool alt;
+  uint32_t formant_increment[2][3];
+  uint16_t formant_amplitude_q12[2][3];
+  uint16_t voice_gain_q12;
 };
 
 struct DinSumControlFrame {
