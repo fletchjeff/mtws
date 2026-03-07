@@ -3,6 +3,9 @@
 ## Goal
 Unify the project into a single modular `mtws` firmware with 6 oscillator slots, global USB MIDI device input, multicore control offload, and shared control/audio behavior.
 
+## Follow-up Tracker
+- Active post-plan work items are tracked in [MTWS_TODO.md](/Users/jeff/Toonbox/MTWS/mtws/docs/MTWS_TODO.md).
+
 ## Slot Map
 1. sawsome
 2. bender
