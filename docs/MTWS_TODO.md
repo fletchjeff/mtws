@@ -12,10 +12,10 @@ after each hardware test loop so pending work stays visible.
 
 ## Active Items
 
-### 1. sawsome triangle glitches in `mtws`
+### 1. sawsome glitches in `mtws`
 - `Status`: Open
 - `Scope`: [prex/mtws/engines/sawsome_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/sawsome_engine.cpp)
-- `Notes`: Triangle wave in `mtws` glitches. Likely needs lower CPU load or a cheaper triangle path than the current implementation.
+- `Notes`: Both modes in `mtws` glitches. Likely needs lower CPU load or a cheaper oscillator path than the current implementation.
 - `What to test`: Compare normal vs alt in standalone `sawsome` and integrated `mtws`, then stress-test with high pitch and wide spread.
 - Alternative idea for Alt is a Reese bass implementation.
 
