@@ -13,16 +13,16 @@ after each hardware test loop so pending work stays visible.
 ## Active Items
 
 ### 1. sawsome glitches in `mtws`
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/engines/sawsome_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/sawsome_engine.cpp)
-- `Notes`: Both modes in `mtws` glitches. Likely needs lower CPU load or a cheaper oscillator path than the current implementation.
+- `Notes`: Removing the slot crossfade fixed the remaining glitching enough to close this item. The earlier Reese-bass alt idea is not needed because the hardware already provides two analog square waves.
 - `What to test`: Compare normal vs alt in standalone `sawsome` and integrated `mtws`, then stress-test with high pitch and wide spread.
 - Alternative idea for Alt is a Reese bass implementation.
 
 ### 2. Try 14 partials in cumulus
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/engines/cumulus_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/cumulus_engine.cpp)
-- `Notes`: Evaluate whether reducing from `16` partials to `14` improves headroom and removes artifacts without losing the intended character.
+- `Notes`: No longer needed after the slot-crossfade fix removed the artifacts that motivated this check.
 - `What to test`: Build and hardware compare `16` vs `14` partials for CPU stability, spectral balance, and perceived loudness.
 
 ### 3. Better wavetables for floatable
@@ -50,9 +50,9 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Compare CPU headroom, stability, and any audible tradeoffs after applying candidate optimizations to each engine.
 
 ### 7. Try Braids `FOLD` for `bender`
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [reference/twists/releases/10_twists/src/braids](/Users/jeff/Toonbox/MTWS/reference/twists/releases/10_twists/src/braids), [prex/bender/bender_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/bender/bender_solo_engine.cpp), [prex/mtws/engines/bender_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/bender_engine.cpp)
-- `Notes`: Evaluate whether the Braids `FOLD` algorithm is a better fit for `bender` than the current Utility-Pair-derived fold path.
+- `Notes`: Evaluated in the solo engine and rolled back. The Utility-Pair-derived fold path is preferred because it produces stronger sine harmonics.
 - `What to test`: Compare fold character, aliasing behavior, control feel, and level behavior between the current `bender` implementation and a Braids `FOLD` variant.
 
 ### 8. Rethink / Recheck Anti aliasing
@@ -66,3 +66,35 @@ after each hardware test loop so pending work stays visible.
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp)
 - `Notes`: Generate a "sub" on pulse out2 that's is 1/2 the main frequency
 - `What to test`: Check it works
+
+### 10. A bit more volume in cumulus
+- `Status`: Open
+
+### 11. Finish I/O
+- `Status`: Open
+- `Notes`:
+    - In:
+        - Main : Tuning
+        - X : Engine X
+        - Y : Engine Y
+        - CV1 : Tunning added to main
+        - CV2 : VCA in
+        - Pulse1 : Alt latch
+        - Pulse2 : Slot switch
+        - Audio1 : Engine X with X knob as attenuverter 
+        - Audio2 : Engine Y with Y knob as attenuverter 
+    - Out:
+        - CV1 : last midi note
+        - CV2 : Midi CC 11
+        - Pulse1: Midi on/off
+        - Pulse2: Sub out
+        - Audio1: Engine out 1
+        - Audio2: Engine out 2
+    - Midi: 
+        - Channel : 1
+        - CC:
+            10 : maps to X 
+            74 : maps to Y
+            11 : Sends CV2 out
+
+### 12. Maybe add Reese bass to sawsome on alt for pulse width
