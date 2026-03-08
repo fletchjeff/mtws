@@ -82,3 +82,32 @@ target_sources(mtws PUBLIC
 )
 target_include_directories(mtws PUBLIC ${CMAKE_CURRENT_LIST_DIR}/prex/mtws/usb)
 target_link_libraries(mtws pico_multicore tinyusb_device tinyusb_board hardware_flash hardware_sync)
+
+# USB serial input monitor tool for inspecting raw Audio/CV/Pulse input values.
+add_executable(input_monitor)
+if(TARGET input_monitor)
+  target_compile_options(input_monitor PRIVATE -Wdouble-promotion -Wfloat-conversion -Wall -Wextra)
+  target_link_options(input_monitor PRIVATE -Wl,--print-memory-usage)
+
+  # Give oscillator more time to start - some boards won't run if this isn't included.
+  target_compile_definitions(input_monitor PRIVATE PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
+
+  target_include_directories(input_monitor PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+  target_link_libraries(
+    input_monitor
+    pico_unique_id
+    pico_stdlib
+    pico_multicore
+    hardware_dma
+    hardware_i2c
+    hardware_pwm
+    hardware_adc
+    hardware_spi
+    hardware_interp
+  )
+  set_target_properties(input_monitor PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools/input_monitor)
+  target_sources(input_monitor PUBLIC ${CMAKE_CURRENT_LIST_DIR}/tools/input_monitor/src/main.cpp)
+  pico_enable_stdio_usb(input_monitor 1)
+  pico_enable_stdio_uart(input_monitor 0)
+  pico_add_extra_outputs(input_monitor)
+endif()

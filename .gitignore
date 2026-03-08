@@ -2,3 +2,5 @@
 \#*
 build
 .DS_Store
+tools/input_monitor_cli/__pycache__/
+tools/input_monitor_cli/.venv/
