@@ -6,6 +6,10 @@ namespace {
 constexpr uint32_t kBasePhaseInc10Hz = 894785U;  // 10 * 2^32 / 48k
 constexpr uint32_t kMaxPhaseInc10kHz = 894784853U;  // 10000 * 2^32 / 48k
 constexpr uint32_t kUnityQ12 = 4096U;
+// ComputerCard CV/audio domain is approximately +/-6 V over -2048..2047.
+// The global VCA should open fully by +5 V, so clamp the positive CV2 range
+// to the nearest input code for 2047 * 5 / 6.
+constexpr int32_t kCv2FiveVoltCode = 1706;
 
 // 2^(x) for x in [0,1] on 1/128 grid, Q16 format.
 constexpr uint32_t kExp2Q16[129] = {
@@ -122,8 +126,12 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   out.mode_alt = ui.pulse1_connected ? ui.pulse1_high : ui.panel_alt_latched;
 
   if (ui.cv2_connected) {
-    uint16_t cv2_uni = ClampU12(int32_t(ui.cv2) + 2048);
-    out.vca_gain_q12 = uint16_t((uint32_t(cv2_uni) * kUnityQ12 + 2047U) / 4095U);
+    // Treat CV2 as a unipolar 0..+5 V VCA input. Negative voltages keep the
+    // VCA fully closed, +5 V reaches unity gain, and higher voltages saturate.
+    int32_t cv2_pos = ui.cv2;
+    if (cv2_pos < 0) cv2_pos = 0;
+    if (cv2_pos > kCv2FiveVoltCode) cv2_pos = kCv2FiveVoltCode;
+    out.vca_gain_q12 = uint16_t((uint32_t(cv2_pos) * kUnityQ12 + (kCv2FiveVoltCode / 2)) / kCv2FiveVoltCode);
   } else {
     out.vca_gain_q12 = kUnityQ12;
   }
