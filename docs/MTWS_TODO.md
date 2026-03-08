@@ -40,7 +40,7 @@ after each hardware test loop so pending work stays visible.
 ### 5. Revisit `losenge` alt mode purpose
 - `Status`: Open
 - `Scope`: [prex/losenge/losenge_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/losenge/losenge_solo_engine.cpp), [prex/mtws/engines/losenge_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/losenge_engine.cpp)
-- `Notes`: `Y` already provides a continuous tract-size / male-female-style formant shift, so `alt` may be redundant as a female table switch. Decide whether to keep `alt` as a separate vowel table or repurpose it for something more distinct.
+- `Notes`: `Y` already provides a continuous tract-size / male-female-style formant shift, so `alt` may be redundant as a female table switch. Decide whether to keep `alt` as a separate vowel table or repurpose it for something more distinct. Maybe try running at f2-f4, not f1-f3
 - `What to test`: Compare current `alt` behavior against a repurposed alternative after the solo engine is stabilized, then decide what should carry into integrated `mtws`.
 
 ### 6. Check Braids `HARM` and `WMAP` for optimization ideas
@@ -54,3 +54,15 @@ after each hardware test loop so pending work stays visible.
 - `Scope`: [reference/twists/releases/10_twists/src/braids](/Users/jeff/Toonbox/MTWS/reference/twists/releases/10_twists/src/braids), [prex/bender/bender_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/bender/bender_solo_engine.cpp), [prex/mtws/engines/bender_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/bender_engine.cpp)
 - `Notes`: Evaluate whether the Braids `FOLD` algorithm is a better fit for `bender` than the current Utility-Pair-derived fold path.
 - `What to test`: Compare fold character, aliasing behavior, control feel, and level behavior between the current `bender` implementation and a Braids `FOLD` variant.
+
+### 8. Rethink / Recheck Anti aliasing
+- `Status`: Open
+- `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp)
+- `Notes`: Even with the polybleb, there is still high frequency aliasing artifacts. Look at a low pass on all outputs option
+- `What to test`: Check that high frequency aliasing goes away.
+
+### 9. Sub out on pulse 2
+- `Status`: Open
+- `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp)
+- `Notes`: Generate a "sub" on pulse out2 that's is 1/2 the main frequency
+- `What to test`: Check it works
