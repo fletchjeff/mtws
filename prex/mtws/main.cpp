@@ -18,7 +18,6 @@ class MTWSApp : public ComputerCard {
   static constexpr uint32_t kControlDivisor = 16;
   static constexpr uint32_t kControlPeriodUs = (kControlDivisor * 1000000U) / 48000U;
   static constexpr uint8_t kSwitchDebounceTicks = 3;
-  static constexpr uint32_t kCrossfadeSamples = 64;  // ~1.33ms
   static constexpr uint32_t kNoteFlashOffSamples = 960;  // ~20ms
 
   MTWSApp()
@@ -33,8 +32,6 @@ class MTWSApp : public ComputerCard {
         switch_stable_count_(0),
         panel_alt_latched_(false),
         selected_slot_(5),
-        previous_slot_(0),
-        transition_samples_remaining_(0),
         seen_note_on_counter_(0),
         note_flash_samples_remaining_(0),
         last_cv_note_sent_(255),
@@ -76,7 +73,6 @@ class MTWSApp : public ComputerCard {
       control_frames_[i].global = init_global;
       registry_.Get(init_global.selected_slot)->ControlTick(init_global, control_frames_[i].engine);
     }
-    transition_frame_ = control_frames_[0];
   }
 
   static void Core1Entry() {
@@ -138,14 +134,10 @@ class MTWSApp : public ComputerCard {
 
     bool down_edge = (sw == Down) && (prev_stable != Down);
     if (down_edge) {
-      previous_slot_ = selected_slot_;
       selected_slot_ = uint8_t((selected_slot_ + 1U) % kNumOscillatorSlots);
-
-      uint32_t read_index = published_frame_index_;
-      __dmb();
-      transition_frame_ = control_frames_[read_index];
-      transition_samples_remaining_ = int(kCrossfadeSamples);
-
+      // Slot changes are now hard cuts. This removes the extra render of the
+      // previous engine from the audio callback so switching costs no more than
+      // normal steady-state rendering.
       registry_.Get(selected_slot_)->OnSelected();
     }
 
@@ -219,21 +211,6 @@ class MTWSApp : public ComputerCard {
     int32_t mixed_out1 = new_out1;
     int32_t mixed_out2 = new_out2;
 
-    if (transition_samples_remaining_ > 0) {
-      int32_t old_out1 = 0;
-      int32_t old_out2 = 0;
-      registry_.Get(previous_slot_)->RenderSample(transition_frame_.engine, old_out1, old_out2);
-
-      uint32_t fade_in_q12 = uint32_t((int64_t(kCrossfadeSamples - uint32_t(transition_samples_remaining_)) * 4096) / kCrossfadeSamples);
-      if (fade_in_q12 > 4096U) fade_in_q12 = 4096U;
-      uint32_t fade_out_q12 = 4096U - fade_in_q12;
-
-      mixed_out1 = int32_t((int64_t(old_out1) * fade_out_q12 + int64_t(new_out1) * fade_in_q12) >> 12);
-      mixed_out2 = int32_t((int64_t(old_out2) * fade_out_q12 + int64_t(new_out2) * fade_in_q12) >> 12);
-
-      --transition_samples_remaining_;
-    }
-
     int32_t out1 = int32_t((int64_t(mixed_out1) * frame.global.vca_gain_q12) >> 12);
     int32_t out2 = int32_t((int64_t(mixed_out2) * frame.global.vca_gain_q12) >> 12);
 
@@ -269,10 +246,6 @@ class MTWSApp : public ComputerCard {
   uint8_t switch_stable_count_;
   bool panel_alt_latched_;
   uint8_t selected_slot_;
-
-  uint8_t previous_slot_;
-  int transition_samples_remaining_;
-  ControlFrame transition_frame_;
 
   uint32_t seen_note_on_counter_;
   int note_flash_samples_remaining_;
