@@ -3,66 +3,102 @@
 #include "prex/mtws/dsp/sine_lut.h"
 #include "prex/solo_common/solo_control_router.h"
 
-// DinSumSoloEngine is a filtered-noise engine. It produces either dual-bandpass
-// outputs (normal) or split high/low outputs (alt) using fixed-point SVF stages.
+// DinSumSoloEngine is a bounded sine-to-saw morph voice. In normal mode, both
+// outputs choose a random interpolation point inside the interval between the
+// shared sine and their saw targets, with Y crossfading the `p` noise source
+// between smooth low-passed and nervous high-passed variants. Out1 uses the
+// local ramp-up saw, while Out2 uses the same ramp-up saw evaluated 90 degrees
+// later. In alt mode, the oscillator becomes cycle-locked and
+// probabilistic: each phase wrap chooses either sine or saw for the whole
+// cycle, with saw probability set by X.
 class DinSumSoloEngine {
  public:
   // Per-block parameters prepared on the control thread.
   struct RenderFrame {
-    // Low filter frequency coefficient in Q15.
-    uint16_t low_f_q15;
-    // High filter frequency coefficient in Q15.
-    uint16_t high_f_q15;
-    // Resonance damping factor in Q12.
-    uint16_t damping_q12;
-    // Alternate routing/mode switch.
+    // Shared phase increment for the phase-aligned sine and saw oscillators.
+    uint32_t phase_increment;
+    // Morph knob in Q12 where 0 = pure sine and 4096 = pure saw.
+    uint16_t morph_q12;
+    // Coherence control in Q12 where 0 = stable/sticky and 4096 = nervous.
+    uint16_t coherence_q12;
+    // Previous bipolar low-passed random target shared by both outputs.
+    int16_t random_lp_prev;
+    // Next bipolar low-passed random target shared by both outputs.
+    int16_t random_lp_next;
+    // Previous bipolar high-passed random target shared by both outputs.
+    int16_t random_hp_prev;
+    // Next bipolar high-passed random target shared by both outputs.
+    int16_t random_hp_next;
+    // Alternate mode enables cycle-locked probabilistic selection instead of
+    // bounded interpolation.
     bool alt;
+    // Monotonic frame sequence used to reset audio-rate random interpolation
+    // whenever the control core publishes a fresh 16-sample control block.
+    uint32_t frame_epoch;
   };
 
-  // Creates the engine with sine LUT dependency (unused here but kept uniform).
+  // Creates the engine with the shared sine LUT dependency.
   explicit DinSumSoloEngine(mtws::SineLUT* lut);
 
-  // Resets noise generator and filter states.
+  // Resets phase, PRNG, and control/audio interpolation state.
   void Init();
-  // Builds filter coefficients and mode flags from one control frame.
-  void BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const;
+  // Builds one control-rate render frame from the latest control snapshot.
+  // Inputs: pitch increment and macro values from the solo control router.
+  // Outputs: phase increment, morph position, and the next pair of random
+  // targets used by the audio-rate bounded interpolation.
+  void BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out);
   // Renders one stereo sample in signed 12-bit output range.
   void RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2);
 
  private:
-  // State-variable filter integrator state.
-  struct SVFState {
-    // Low-pass integrator state.
-    int32_t lp;
-    // Band-pass integrator state.
-    int32_t bp;
-  };
-
   // Clamps to signed 12-bit board audio range.
   static int32_t Clamp12(int32_t v);
-  // Converts frequency in Hz to normalized SVF coefficient f in Q15.
-  static uint16_t HzToFQ15(uint32_t hz);
-  // Integer interpolation utility with Q12 fraction.
-  static uint32_t LerpU32(uint32_t a, uint32_t b, uint16_t t_u12);
-  // One SVF update that returns high-pass output.
-  static int32_t SVFHighpass(int32_t in, uint16_t f_q15, uint16_t damping_q12, SVFState& state);
-  // One SVF update that returns low-pass output.
-  static int32_t SVFLowpass(int32_t in, uint16_t f_q15, uint16_t damping_q12, SVFState& state);
-  // One SVF update that returns band-pass output.
-  static int32_t SVFBandpass(int32_t in, uint16_t f_q15, uint16_t damping_q12, SVFState& state);
+  // Interpolates between two signed audio samples with a Q12 morph amount.
+  // Inputs: endpoints `a` and `b`, and `t_q12` in the range 0..4096.
+  // Output: a bounded point inside the interval [a, b].
+  static int32_t LerpQ12(int32_t a, int32_t b, uint16_t t_q12);
+  // Generates a band-limited saw from the shared phase accumulator.
+  // Inputs: phase and phase increment in the native 32-bit oscillator domain.
+  // Output: saw sample in the signed 12-bit audio range.
+  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc);
+  // Advances the control-rate PRNG and returns a bipolar 12-bit random value.
+  // Input/output: xorshift32 state stored in `state`.
+  // Output: signed value approximately in the range -2048..2047.
+  static int16_t Rand12Bipolar(uint32_t& state);
+  // Advances the audio-rate PRNG and returns a unipolar 12-bit random value.
+  // Input/output: xorshift32 state stored in `state`.
+  // Output: unsigned value in the range 0..4095 for probability comparisons.
+  static uint16_t Rand12Unipolar(uint32_t& state);
 
   // Kept for interface consistency with other solo engines.
   mtws::SineLUT* lut_;
-  // Xorshift PRNG state for white-noise source.
-  uint32_t noise_state_;
-  // One-pole low-pass memory used to derive pink-ish noise.
-  int32_t pink_state_;
-  // Normal-mode band-pass state for out1.
-  SVFState bp1_state_;
-  // Normal-mode band-pass state for out2.
-  SVFState bp2_state_;
-  // Alt-mode high-pass state for out1.
-  SVFState hp_state_;
-  // Alt-mode low-pass state for out2.
-  SVFState lp_state_;
+  // Xorshift PRNG state used by the control-rate random-target generator.
+  uint32_t random_state_;
+  // Xorshift PRNG state used by the audio-rate cycle-choice generator in alt.
+  uint32_t alt_random_state_;
+  // Shared phase accumulator used for both source waveforms.
+  uint32_t phase_;
+  // Most recently generated low-passed random target shared by both outputs.
+  int16_t control_random_lp_next_;
+  // Most recently generated high-passed random target shared by both outputs.
+  int16_t control_random_hp_next_;
+  // Monotonic counter written into each render frame so the audio path can
+  // restart its 16-sample random interpolation when the frame changes.
+  uint32_t frame_epoch_counter_;
+  // The last frame sequence observed on the audio core.
+  uint32_t active_frame_epoch_;
+  // Audio-rate interpolation step inside the current 16-sample control block.
+  uint8_t random_interp_step_;
+  // Tracks whether the audio path is currently rendering alt-mode cycles.
+  bool active_alt_mode_;
+  // Stores the waveform family selected for Out1 on the current alt-mode cycle.
+  bool alt_cycle_is_saw_out1_;
+  // Stores the waveform family selected for Out2 on the current alt-mode cycle.
+  bool alt_cycle_is_saw_out2_;
+  // Counts how many wraps have elapsed since the current Out1 alt-cycle choice
+  // was last refreshed. This implements Y-controlled stickiness.
+  uint8_t alt_cycle_hold_out1_;
+  // Counts how many wraps have elapsed since the current Out2 alt-cycle choice
+  // was last refreshed. This implements Y-controlled stickiness.
+  uint8_t alt_cycle_hold_out2_;
 };

@@ -88,10 +88,15 @@ struct LosengeControlFrame {
 };
 
 struct DinSumControlFrame {
-  uint16_t low_f_q15;
-  uint16_t high_f_q15;
-  uint16_t damping_q12;
+  uint32_t phase_increment;
+  uint16_t morph_q12;
+  uint16_t coherence_q12;
+  int16_t random_lp_prev;
+  int16_t random_lp_next;
+  int16_t random_hp_prev;
+  int16_t random_hp_next;
   bool alt;
+  uint32_t frame_epoch;
 };
 
 struct EngineControlFrame {
