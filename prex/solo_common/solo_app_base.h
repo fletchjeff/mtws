@@ -41,9 +41,8 @@ class SoloAppBase : public ComputerCard {
     ui_snapshots_[1] = ui;
 
     ControlFrame c = SoloControlRouter::Build(ui);
-    for (int i = 0; i < 2; ++i) {
-      engine_.BuildRenderFrame(c, render_frames_[i]);
-    }
+    engine_.BuildRenderFrame(c, render_frames_[0]);
+    render_frames_[1] = render_frames_[0];
   }
 
   static void Core1Entry() {
@@ -62,6 +61,9 @@ class SoloAppBase : public ComputerCard {
 
       uint32_t read_index = published_frame_index_;
       uint32_t write_index = read_index ^ 1U;
+      // Start from the currently published frame so engines can update only the
+      // parts of the next frame that changed this control tick.
+      render_frames_[write_index] = render_frames_[read_index];
       engine_.BuildRenderFrame(control, render_frames_[write_index]);
 
       __dmb();
