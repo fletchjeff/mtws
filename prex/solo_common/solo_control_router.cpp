@@ -5,6 +5,11 @@ namespace solo_common {
 namespace {
 constexpr uint32_t kBasePhaseInc10Hz = 894785U;      // 10 * 2^32 / 48k
 constexpr uint32_t kMaxPhaseInc10kHz = 894784853U;   // 10000 * 2^32 / 48k
+constexpr uint32_t kMaxU12 = 4095U;
+// ComputerCard audio/CV signals span approximately +/-6 V over -2048..2047.
+// Solo preview should use the same practical modulation range as `mtws`, where
+// +/-5 V covers the full macro span and hotter sources saturate.
+constexpr int32_t kFiveVoltInputCode = 1706;
 
 constexpr uint32_t kExp2Q16[129] = {
      65536,  65892,  66250,  66609,  66971,  67335,  67700,  68068,  68438,  68809,  69183,  69558,  69936,  70316,  70698,  71082,
@@ -22,8 +27,29 @@ constexpr uint32_t kExp2Q16[129] = {
 
 uint16_t SoloControlRouter::ClampU12(int32_t v) {
   if (v < 0) return 0;
-  if (v > 4095) return 4095;
+  if (v > int32_t(kMaxU12)) return kMaxU12;
   return uint16_t(v);
+}
+
+// Clamps one bipolar board-domain input code into the intended -5 V..+5 V
+// modulation range so hotter sources behave like saturated CV, not overflow.
+static inline int32_t ClampBipolarFiveVoltInput(int32_t input_code) {
+  if (input_code < -kFiveVoltInputCode) return -kFiveVoltInputCode;
+  if (input_code > kFiveVoltInputCode) return kFiveVoltInputCode;
+  return input_code;
+}
+
+// Maps a bipolar -5 V..+5 V input code into the unsigned macro domain.
+// Endpoints are -5 V -> 0, 0 V -> ~2048, +5 V -> 4095.
+static inline uint16_t MapBipolarFiveVoltInputToU12(int32_t input_code) {
+  const uint32_t shifted_code = uint32_t(ClampBipolarFiveVoltInput(input_code) + kFiveVoltInputCode);
+  return uint16_t((shifted_code * kMaxU12 + uint32_t(kFiveVoltInputCode)) / (2U * uint32_t(kFiveVoltInputCode)));
+}
+
+// Applies a 0..4095 attenuation amount to a 0..4095 source and rounds to the
+// nearest output code so full-scale attenuation preserves full-scale inputs.
+static inline uint16_t ApplyU12Attenuation(uint16_t source_u12, uint16_t amount_u12) {
+  return uint16_t((uint32_t(source_u12) * uint32_t(amount_u12) + (kMaxU12 / 2U)) / kMaxU12);
 }
 
 uint32_t SoloControlRouter::BasePhaseIncrementFromPitchCode(uint32_t pitch_code) {
@@ -56,14 +82,12 @@ ControlFrame SoloControlRouter::Build(const UISnapshot& ui) {
 
   uint16_t x_local = ui.knob_x;
   if (ui.audio1_connected) {
-    uint16_t audio_uni = ClampU12(int32_t(ui.audio1) + 2048);
-    x_local = uint16_t((uint32_t(audio_uni) * ui.knob_x + 2048U) >> 12);
+    x_local = ApplyU12Attenuation(MapBipolarFiveVoltInputToU12(ui.audio1), ui.knob_x);
   }
 
   uint16_t y_local = ui.knob_y;
   if (ui.audio2_connected) {
-    uint16_t audio_uni = ClampU12(int32_t(ui.audio2) + 2048);
-    y_local = uint16_t((uint32_t(audio_uni) * ui.knob_y + 2048U) >> 12);
+    y_local = ApplyU12Attenuation(MapBipolarFiveVoltInputToU12(ui.audio2), ui.knob_y);
   }
 
   out.macro_x = x_local;

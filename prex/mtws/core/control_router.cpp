@@ -5,11 +5,12 @@ namespace mtws {
 namespace {
 constexpr uint32_t kBasePhaseInc10Hz = 894785U;  // 10 * 2^32 / 48k
 constexpr uint32_t kMaxPhaseInc10kHz = 894784853U;  // 10000 * 2^32 / 48k
+constexpr uint32_t kMaxU12 = 4095U;
 constexpr uint32_t kUnityQ12 = 4096U;
-// ComputerCard CV/audio domain is approximately +/-6 V over -2048..2047.
-// The global VCA should open fully by +5 V, so clamp the positive CV2 range
-// to the nearest input code for 2047 * 5 / 6.
-constexpr int32_t kCv2FiveVoltCode = 1706;
+// ComputerCard audio/CV signals span approximately +/-6 V over -2048..2047.
+// The modulation and VCA paths should reach full scale by +5 V, so use the
+// nearest signed input code for 2047 * 5 / 6 as the practical patch range.
+constexpr int32_t kFiveVoltInputCode = 1706;
 
 // 2^(x) for x in [0,1] on 1/128 grid, Q16 format.
 constexpr uint32_t kExp2Q16[129] = {
@@ -31,8 +32,37 @@ constexpr uint32_t kSemitoneQ16[12] = {
 
 inline uint16_t ClampU12(int32_t v) {
   if (v < 0) return 0;
-  if (v > 4095) return 4095;
+  if (v > int32_t(kMaxU12)) return kMaxU12;
   return uint16_t(v);
+}
+
+// Clamps one bipolar board-domain input code into the intended -5 V..+5 V
+// modulation range so hotter sources saturate instead of overdriving the macro.
+inline int32_t ClampBipolarFiveVoltInput(int32_t input_code) {
+  if (input_code < -kFiveVoltInputCode) return -kFiveVoltInputCode;
+  if (input_code > kFiveVoltInputCode) return kFiveVoltInputCode;
+  return input_code;
+}
+
+// Maps a bipolar -5 V..+5 V input code into the unsigned macro domain.
+// Endpoints are -5 V -> 0, 0 V -> ~2048, +5 V -> 4095.
+inline uint16_t MapBipolarFiveVoltInputToU12(int32_t input_code) {
+  const uint32_t shifted_code = uint32_t(ClampBipolarFiveVoltInput(input_code) + kFiveVoltInputCode);
+  return uint16_t((shifted_code * kMaxU12 + uint32_t(kFiveVoltInputCode)) / (2U * uint32_t(kFiveVoltInputCode)));
+}
+
+// Applies a 0..4095 attenuation amount to a 0..4095 source and rounds to the
+// nearest output code so full-scale attenuation preserves full-scale inputs.
+inline uint16_t ApplyU12Attenuation(uint16_t source_u12, uint16_t amount_u12) {
+  return uint16_t((uint32_t(source_u12) * uint32_t(amount_u12) + (kMaxU12 / 2U)) / kMaxU12);
+}
+
+// Maps a unipolar 0..+5 V control input into Q12 gain for the global VCA.
+// Inputs at or below 0 V keep the VCA closed; +5 V and above reach unity gain.
+inline uint16_t MapPositiveFiveVoltInputToQ12(int32_t input_code) {
+  if (input_code < 0) input_code = 0;
+  if (input_code > kFiveVoltInputCode) input_code = kFiveVoltInputCode;
+  return uint16_t((uint32_t(input_code) * kUnityQ12 + (kFiveVoltInputCode / 2)) / kFiveVoltInputCode);
 }
 
 }  // namespace
@@ -106,14 +136,12 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
 
   uint16_t x_local = ui.knob_x;
   if (ui.audio1_connected) {
-    uint16_t audio_uni = ClampU12(int32_t(ui.audio1) + 2048);
-    x_local = uint16_t((uint32_t(audio_uni) * ui.knob_x + 2048U) >> 12);
+    x_local = ApplyU12Attenuation(MapBipolarFiveVoltInputToU12(ui.audio1), ui.knob_x);
   }
 
   uint16_t y_local = ui.knob_y;
   if (ui.audio2_connected) {
-    uint16_t audio_uni = ClampU12(int32_t(ui.audio2) + 2048);
-    y_local = uint16_t((uint32_t(audio_uni) * ui.knob_y + 2048U) >> 12);
+    y_local = ApplyU12Attenuation(MapBipolarFiveVoltInputToU12(ui.audio2), ui.knob_y);
   }
 
   uint32_t macro_x = uint32_t(x_local) + (uint32_t(midi.cc1) << 5);
@@ -126,12 +154,7 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   out.mode_alt = ui.pulse1_connected ? ui.pulse1_high : ui.panel_alt_latched;
 
   if (ui.cv2_connected) {
-    // Treat CV2 as a unipolar 0..+5 V VCA input. Negative voltages keep the
-    // VCA fully closed, +5 V reaches unity gain, and higher voltages saturate.
-    int32_t cv2_pos = ui.cv2;
-    if (cv2_pos < 0) cv2_pos = 0;
-    if (cv2_pos > kCv2FiveVoltCode) cv2_pos = kCv2FiveVoltCode;
-    out.vca_gain_q12 = uint16_t((uint32_t(cv2_pos) * kUnityQ12 + (kCv2FiveVoltCode / 2)) / kCv2FiveVoltCode);
+    out.vca_gain_q12 = MapPositiveFiveVoltInputToQ12(ui.cv2);
   } else {
     out.vca_gain_q12 = kUnityQ12;
   }

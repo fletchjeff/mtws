@@ -32,7 +32,7 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Sweep the full table set, listen for bland/redundant tables, and compare any replacement bank on hardware.
 
 ### 4. Fix the global VCA
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp), Utility-Pair reference behavior
 - `Notes`: Current global VCA behavior needs comparison with Utility-Pair and likely correction in the final output scaling path.
 - `What to test`: Verify CV2 disconnected = unity, connected = expected attenuation law, and compare response against Utility-Pair behavior.
@@ -81,8 +81,8 @@ after each hardware test loop so pending work stays visible.
         - CV2 : VCA in
         - Pulse1 : Alt latch
         - Pulse2 : Slot switch
-        - Audio1 : Engine X with X knob as attenuverter 
-        - Audio2 : Engine Y with Y knob as attenuverter 
+        - Audio1 : Engine X with X knob as attenuator 
+        - Audio2 : Engine Y with Y knob as attenuator 
     - Out:
         - CV1 : last midi note
         - CV2 : Midi CC 11

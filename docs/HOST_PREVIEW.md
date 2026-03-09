@@ -87,7 +87,9 @@ Notes:
 Macro behavior matches solo firmware:
 
 - if audio input is disconnected, macro follows knob directly
-- if connected, audio input is unipolarized and scaled by knob as attenuator depth
+- if connected, audio input is clamped to approximately `-5V..+5V`, remapped to `0..4095`, and scaled by the knob as attenuation amount
+- with a connected input and knob full CCW, macro stays at `0`
+- with a connected input and knob full CW, `-5V -> 0`, `0V -> ~2048`, and `+5V -> 4095`
 
 ## Automation CSV
 
