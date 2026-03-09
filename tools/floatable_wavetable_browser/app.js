@@ -692,15 +692,18 @@ function sortEntries(entries, sortKey) {
 
 /**
  * Redraw the manifest summary, library results, candidate panel, slot grid, and button state.
- * Inputs: none.
+ * Inputs: options - optional render flags. preserveLibraryScroll keeps the current library scroll offset
+ * when the library contents are being redrawn without changing the filtered result set.
  * Outputs: none. The DOM is updated to match the current application state.
  */
-function renderAll() {
+function renderAll(options = {}) {
   syncAllLibraryFilterSliders();
   updateCategorySummary();
   renderManifestSummary();
   renderResultsSummary();
-  renderLibraryResults();
+  renderLibraryResults({
+    preserveScroll: Boolean(options.preserveLibraryScroll),
+  });
   renderCandidatePanel();
   renderSlotGrid();
   updateActionButtons();
@@ -754,16 +757,20 @@ function renderResultsSummary() {
 
 /**
  * Render the scrollable library result cards using the current filtered entries.
- * Inputs: none.
+ * Inputs: options - optional render flags. preserveScroll restores the current scroll offset after redraw.
  * Outputs: none. The library result container is rebuilt from the filtered entry list.
  */
-function renderLibraryResults() {
+function renderLibraryResults(options = {}) {
+  const previousScrollTop = options.preserveScroll ? dom.libraryResults.scrollTop : 0;
   dom.libraryResults.textContent = "";
 
   if (!state.manifest) {
     dom.libraryResults.appendChild(
       createPlaceholderCard("Manifest not available. Generate akwf_manifest.json first."),
     );
+    if (options.preserveScroll) {
+      dom.libraryResults.scrollTop = previousScrollTop;
+    }
     return;
   }
 
@@ -771,6 +778,9 @@ function renderLibraryResults() {
     dom.libraryResults.appendChild(
       createPlaceholderCard("No waves match the current filter."),
     );
+    if (options.preserveScroll) {
+      dom.libraryResults.scrollTop = previousScrollTop;
+    }
     return;
   }
 
@@ -780,6 +790,10 @@ function renderLibraryResults() {
     dom.libraryResults.appendChild(card);
     drawWaveCanvas(card.querySelector(".mini-canvas"), getEntryPreviewPoints(entry), "#0f6b6a");
   });
+
+  if (options.preserveScroll) {
+    dom.libraryResults.scrollTop = previousScrollTop;
+  }
 }
 
 /**
@@ -1200,7 +1214,7 @@ function getEntryById(entryId) {
  */
 function selectEntry(entryId) {
   state.selectedEntryId = entryId;
-  renderAll();
+  renderAll({ preserveLibraryScroll: true });
 }
 
 /**
@@ -1212,7 +1226,7 @@ function setSelectedSlot(slotIndex) {
   state.selectedSlotIndex = slotIndex;
   renderCandidatePanel();
   renderSlotGrid();
-  renderLibraryResults();
+  renderLibraryResults({ preserveScroll: true });
   updateActionButtons();
 }
 
@@ -1311,7 +1325,7 @@ function replaceSlotsFromEntries(entries) {
 
   state.selectedSlotIndex = 0;
   state.selectedEntryId = entries[0]?.id || null;
-  renderAll();
+  renderAll({ preserveLibraryScroll: true });
 }
 
 /**
@@ -1339,7 +1353,7 @@ function sampleRandomEntries(entries, count) {
  */
 function assignEntryToSlot(entryId, slotIndex) {
   state.slots[slotIndex] = { entryId };
-  renderAll();
+  renderAll({ preserveLibraryScroll: true });
 
   const entry = getEntryById(entryId);
   setStatusMessage(
@@ -1363,7 +1377,7 @@ function findNextOpenSlot() {
  */
 function clearSlot(slotIndex) {
   state.slots[slotIndex] = null;
-  renderAll();
+  renderAll({ preserveLibraryScroll: true });
   setStatusMessage(`Cleared slot ${String(slotIndex + 1).padStart(2, "0")}.`);
 }
 
@@ -1383,7 +1397,7 @@ function swapSlots(leftIndex, rightIndex) {
     state.selectedSlotIndex = leftIndex;
   }
 
-  renderAll();
+  renderAll({ preserveLibraryScroll: true });
   setStatusMessage(
     `Swapped slot ${String(leftIndex + 1).padStart(2, "0")} with slot ${String(rightIndex + 1).padStart(2, "0")}.`,
   );
