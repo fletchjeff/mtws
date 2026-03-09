@@ -62,9 +62,9 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Check that high frequency aliasing goes away.
 
 ### 9. Sub out on pulse 2
-- `Status`: Open
+- `Status`: Blocked
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp)
-- `Notes`: Generate a "sub" on pulse out2 that's is 1/2 the main frequency
+- `Notes`: Generate a "sub" on pulse out2 that's is 1/2 the main frequency - Update, this should be midi clock rather.
 - `What to test`: Check it works
 
 ### 10. A bit more volume in cumulus
