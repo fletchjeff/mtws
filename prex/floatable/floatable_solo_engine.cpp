@@ -1,10 +1,34 @@
 #include "prex/floatable/floatable_solo_engine.h"
 
-#include "prex/mtws/wavetables/wavetable_bank_a_64x512.h"
-#include "prex/mtws/wavetables/wavetable_bank_b_64x512.h"
+#include "prex/floatable/floatable_wavetable_2_original_64x256.h"
+#include "prex/floatable/floatable_wavetable_4_reversed_64x256.h"
+
+namespace {
+constexpr uint32_t kNumSourceWaves = 64U;
+constexpr uint32_t kInterpolationCells = kNumSourceWaves - 1U;
+constexpr uint32_t kRenderedTableSize = 256U;
+constexpr uint32_t kRenderedTableMask = kRenderedTableSize - 1U;
+constexpr uint32_t kRenderedTableIndexShift = 24U;
+constexpr uint32_t kRenderedTableFracShift = 12U;
+
+// Clamps a rendered wavetable sample back into the signed 16-bit source domain.
+static inline int16_t ClampToInt16(int32_t sample) {
+  if (sample > 32767) return 32767;
+  if (sample < -32768) return -32768;
+  return int16_t(sample);
+}
+
+// Clamps the rendered output sample to the signed 12-bit ComputerCard domain.
+static inline int32_t ClampAudio12(int32_t sample) {
+  if (sample > 2047) return 2047;
+  if (sample < -2048) return -2048;
+  return sample;
+}
+}  // namespace
 
 // Initializes dependency and runtime phase state.
-FloatableSoloEngine::FloatableSoloEngine(mtws::SineLUT* lut) : lut_(lut), phase_(0) {
+FloatableSoloEngine::FloatableSoloEngine(mtws::SineLUT* lut)
+    : lut_(lut), phase_(0) {
   Init();
 }
 
@@ -14,32 +38,36 @@ void FloatableSoloEngine::Init() {
   phase_ = 0;
 }
 
-// Converts controls into wavetable row selection and horizontal blend amount.
+// Builds both rendered output tables at control rate from the local 64x256
+// source bank. X selects the morph position for Out1, and Y selects the morph
+// position for Out2, so the audio core only reads finished tables.
 void FloatableSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   out.phase_inc = control.pitch_inc;
 
-  uint32_t x = control.macro_x;
-  uint32_t y = control.macro_y;
-  if (x > 4095U) x = 4095U;
-  if (y > 4095U) y = 4095U;
+  auto render_wavetable_from_axis = [&](const int16_t source_waves[64][256],
+                                        uint32_t axis_code,
+                                        int16_t rendered_wave[256]) {
+    if (axis_code > 4095U) axis_code = 4095U;
 
-  // Knob range is split into 8 columns/rows: top 3 bits choose table position.
-  uint32_t x0 = x >> 9;
-  uint32_t y0 = y >> 9;
-  if (x0 > 7U) x0 = 7U;
-  if (y0 > 7U) y0 = 7U;
-  // Horizontal neighbor wraps so the far-right cell blends back to column 0.
-  uint32_t x1 = (x0 + 1U) & 0x7U;
+    // Map 0..4095 across 63 interpolation cells so the full sweep moves from
+    // wave 0 to wave 63. The endpoint special-case preserves exact access to
+    // the final wave instead of stopping one fraction short.
+    uint32_t wave_pos_q12 = axis_code * kInterpolationCells;
+    uint32_t wave_a = wave_pos_q12 >> 12;
+    if (wave_a > (kNumSourceWaves - 2U)) wave_a = kNumSourceWaves - 2U;
+    uint32_t wave_b = wave_a + 1U;
+    uint32_t wave_frac_q12 = wave_pos_q12 & 0x0FFFU;
+    if (axis_code == 4095U) wave_frac_q12 = 4096U;
 
-  out.i00 = uint8_t((y0 << 3) + x0);
-  out.i10 = uint8_t((y0 << 3) + x1);
+    for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
+      int32_t sample_a = source_waves[wave_a][sample_index];
+      int32_t sample_b = source_waves[wave_b][sample_index];
+      rendered_wave[sample_index] = ClampToInt16(LerpQ12(sample_a, sample_b, wave_frac_q12));
+    }
+  };
 
-  // Lower 9 bits are in-cell position; map 0..511 to Q12 0..4096 for interpolation.
-  uint32_t x_frac512 = x & 0x1FFU;
-  uint32_t x_frac_q12 = x_frac512 << 3;
-  if (x_frac512 == 0x1FFU) x_frac_q12 = 4096U;
-  out.x_frac_q12 = uint16_t(x_frac_q12);
-  out.alt = control.alt;
+  render_wavetable_from_axis(floatable_wavetable_2_original_64x256, control.macro_x, out.rendered_out1);
+  render_wavetable_from_axis(floatable_wavetable_4_reversed_64x256, control.macro_y, out.rendered_out2);
 }
 
 // Interpolates between a and b using Q12 fraction t_q12.
@@ -48,38 +76,25 @@ int32_t FloatableSoloEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
   return a + ((b - a) * int32_t(t_q12) >> 12);
 }
 
-// Renders one sample:
-// - choose wavetable bank (A/B)
-// - interpolate in-time between adjacent samples
-// - crossfade between adjacent tables
-// - output forward and inverse stereo morphs
+// Renders one sample by phase-interpolating the two finished 256-sample tables
+// built by the control core. Both outputs share the same phase accumulator so
+// pitch stays locked while X and Y drive independent timbral motion.
 void FloatableSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2) {
   phase_ += frame.phase_inc;
 
-  const int16_t (*table)[512] = frame.alt ? wavetable_bank_b_64x512 : wavetable_bank_a_64x512;
+  // 256-sample table: top 8 phase bits select sample, next 12 bits are used as
+  // the interpolation fraction. This keeps the read path cheap while matching
+  // the reduced table length used to stay within the working frame size.
+  uint32_t sample_index = phase_ >> kRenderedTableIndexShift;
+  uint32_t sample_next = (sample_index + 1U) & kRenderedTableMask;
+  uint32_t sample_frac = (phase_ >> kRenderedTableFracShift) & 0x0FFFU;
 
-  // 512-sample table: top 9 phase bits select sample, next 12 bits are frac.
-  uint32_t sample_index = phase_ >> 23;
-  uint32_t sample_next = (sample_index + 1U) & 0x1FFU;
-  uint32_t sample_frac = (phase_ >> 11) & 0x0FFFU;
+  auto render_output = [&](const int16_t wave[256]) -> int32_t {
+    int32_t sample_a = wave[sample_index];
+    int32_t sample_b = wave[sample_next];
+    return ClampAudio12(LerpQ12(sample_a, sample_b, sample_frac) >> 4);
+  };
 
-  int32_t l1 = table[frame.i00][sample_index];
-  int32_t l2 = table[frame.i00][sample_next];
-  int32_t r1 = table[frame.i10][sample_index];
-  int32_t r2 = table[frame.i10][sample_next];
-
-  int32_t s0 = LerpQ12(l1, l2, sample_frac);
-  int32_t s1 = LerpQ12(r1, r2, sample_frac);
-
-  // Final table-axis blend, then scale down 16-bit table values to 12-bit domain.
-  int32_t fwd = LerpQ12(s0, s1, frame.x_frac_q12) >> 4;
-  int32_t inv = LerpQ12(s1, s0, frame.x_frac_q12) >> 4;
-
-  if (fwd > 2047) fwd = 2047;
-  if (fwd < -2048) fwd = -2048;
-  if (inv > 2047) inv = 2047;
-  if (inv < -2048) inv = -2048;
-
-  out1 = fwd;
-  out2 = inv;
+  out1 = render_output(frame.rendered_out1);
+  out2 = render_output(frame.rendered_out2);
 }

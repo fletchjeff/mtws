@@ -3,22 +3,19 @@
 #include "prex/mtws/dsp/sine_lut.h"
 #include "prex/solo_common/solo_control_router.h"
 
-// FloatableSoloEngine reads from a 64-wave wavetable bank and crossfades
-// neighboring tables along X. Alt mode switches between two full banks.
+// FloatableSoloEngine is a minimum-viable rendered-wavetable test. Core 1 builds
+// two finished 256-sample wavetables, one for each output, and the audio loop
+// only phase-reads those completed tables.
 class FloatableSoloEngine {
  public:
   // Per-block values used during audio-rate rendering.
   struct RenderFrame {
     // Base oscillator phase increment in 0.32 phase units/sample.
     uint32_t phase_inc;
-    // Left/source wavetable row index (0..63).
-    uint8_t i00;
-    // Right/next wavetable row index (0..63, wrapped in row).
-    uint8_t i10;
-    // Horizontal table crossfade fraction in Q12 (0..4096).
-    uint16_t x_frac_q12;
-    // Selects wavetable bank B when true, bank A when false.
-    bool alt;
+    // Final rendered wavetable for Out1 in signed 16-bit source-wave domain.
+    int16_t rendered_out1[256];
+    // Final rendered wavetable for Out2 in signed 16-bit source-wave domain.
+    int16_t rendered_out2[256];
   };
 
   // Creates the engine with shared LUT dependency (kept for interface parity).
@@ -26,7 +23,7 @@ class FloatableSoloEngine {
 
   // Resets oscillator phase.
   void Init();
-  // Maps macro controls to table indices and interpolation fractions.
+  // Builds the next pair of final output tables from the latest control frame.
   void BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const;
   // Renders one stereo sample in signed 12-bit output domain.
   void RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2);
