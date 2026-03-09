@@ -1,6 +1,8 @@
 #include "prex/floatable/floatable_solo_engine.h"
 
+#include "prex/floatable/floatable_wavetable_1_reversed_64x256.h"
 #include "prex/floatable/floatable_wavetable_2_original_64x256.h"
+#include "prex/floatable/floatable_wavetable_3_original_64x256.h"
 #include "prex/floatable/floatable_wavetable_4_reversed_64x256.h"
 
 namespace {
@@ -38,9 +40,10 @@ void FloatableSoloEngine::Init() {
   phase_ = 0;
 }
 
-// Builds both rendered output tables at control rate from the local 64x256
-// source bank. X selects the morph position for Out1, and Y selects the morph
-// position for Out2, so the audio core only reads finished tables.
+// Builds both rendered output tables at control rate from the local 64x256 bank
+// set. Normal mode uses banks 1/2, alt mode uses banks 3/4, and the bank
+// contents are arranged so alt swaps the left/right source assignment for an
+// audible routing test without changing render cost.
 void FloatableSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   out.phase_inc = control.pitch_inc;
 
@@ -66,8 +69,18 @@ void FloatableSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& cont
     }
   };
 
-  render_wavetable_from_axis(floatable_wavetable_2_original_64x256, control.macro_x, out.rendered_out1);
-  render_wavetable_from_axis(floatable_wavetable_4_reversed_64x256, control.macro_y, out.rendered_out2);
+  // Bank layout for this test:
+  // - bank 1 == bank 4 : reversed source
+  // - bank 2 == bank 3 : original source
+  // So flipping alt swaps the Out1/Out2 source roles while keeping the data
+  // set identical, which makes the routing change easy to hear.
+  const int16_t (*out1_source)[256] =
+      control.alt ? floatable_wavetable_3_original_64x256 : floatable_wavetable_1_reversed_64x256;
+  const int16_t (*out2_source)[256] =
+      control.alt ? floatable_wavetable_4_reversed_64x256 : floatable_wavetable_2_original_64x256;
+
+  render_wavetable_from_axis(out1_source, control.macro_x, out.rendered_out1);
+  render_wavetable_from_axis(out2_source, control.macro_y, out.rendered_out2);
 }
 
 // Interpolates between a and b using Q12 fraction t_q12.

@@ -26,15 +26,15 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Build and hardware compare `16` vs `14` partials for CPU stability, spectral balance, and perceived loudness.
 
 ### 3. Better wavetables for floatable
-- `Status`: Open
-- `Scope`: [prex/floatable/wavetable_data.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/wavetable_data.h), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp)
-- `Notes`: Current wavetable set should be reviewed and replaced or expanded with stronger source material.
-- `What to test`: Sweep the full table set, listen for bland/redundant tables, and compare any replacement bank on hardware.
+- `Status`: In Progress
+- `Scope`: [prex/floatable/floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp), [prex/floatable/floatable_wavetable_1_reversed_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_1_reversed_64x256.h), [prex/floatable/floatable_wavetable_2_original_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_2_original_64x256.h), [prex/floatable/floatable_wavetable_3_original_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_3_original_64x256.h), [prex/floatable/floatable_wavetable_4_reversed_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_4_reversed_64x256.h), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp)
+- `Notes`: The engine mechanics are now in a good place. Integrated `mtws` has stable bilinear X/Y interpolation over the `64 x 512` bank A/B tables, and the standalone `floatable` target has a stable `4 x 64 x 256` rendered-table sandbox for bank-routing tests. The current solo banks are intentionally duplicated (`1 == 4`, `2 == 3`) to prove routing, so the remaining work is bank content design, ordering, and stereo pairing.
+- `What to test`: Build curated four-bank source sets in the standalone solo engine first, sweep the full range for continuity and usefulness, then port the chosen bank strategy into integrated `mtws` and compare stereo behavior on hardware.
 
 ### 4. Fix the global VCA
 - `Status`: Done
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp), Utility-Pair reference behavior
-- `Notes`: Current global VCA behavior needs comparison with Utility-Pair and likely correction in the final output scaling path.
+- `Notes`: Closed in the current build. Keep regression-checking CV2 disconnected = unity and connected CV attenuation whenever the final output path changes.
 - `What to test`: Verify CV2 disconnected = unity, connected = expected attenuation law, and compare response against Utility-Pair behavior.
 
 ### 5. Revisit `losenge` alt mode purpose
@@ -46,7 +46,7 @@ after each hardware test loop so pending work stays visible.
 ### 6. Check Braids `HARM` and `WMAP` for optimization ideas
 - `Status`: Open
 - `Scope`: [reference/twists/releases/10_twists/src/braids](/Users/jeff/Toonbox/MTWS/reference/twists/releases/10_twists/src/braids), [prex/cumulus/cumulus_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/cumulus/cumulus_solo_engine.cpp), [prex/mtws/engines/cumulus_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/cumulus_engine.cpp), [prex/floatable/floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp)
-- `Notes`: Review Braids `HARM` and `WMAP` implementations for reusable CPU-saving patterns, table strategies, or control-rate optimizations that could improve `cumulus` and `floatable`.
+- `Notes`: The Braids `WMAP` review already informed the current non-wrapping bilinear floatable mapping and the solo rendered-table experiments. This item stays open for any further reusable patterns that could still help `cumulus` or future floatable bank/tooling work.
 - `What to test`: Compare CPU headroom, stability, and any audible tradeoffs after applying candidate optimizations to each engine.
 
 ### 7. Try Braids `FOLD` for `bender`
