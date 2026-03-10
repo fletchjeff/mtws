@@ -639,7 +639,7 @@ body::before {
   display: grid;
   grid-template-columns: minmax(0, 1.22fr) minmax(0, 1fr);
   gap: 8px;
-  align-items: stretch;
+  align-items: start;
   height: calc(100vh - 26px);
 }
 
@@ -651,12 +651,21 @@ body::before {
   overflow: hidden;
 }
 
+.minimal-layout .library-panel {
+  height: calc(100vh - 26px);
+}
+
+.minimal-layout .slots-panel {
+  height: auto;
+  align-self: start;
+}
+
 .minimal-layout .panel-bar {
   margin-bottom: 6px;
 }
 
 .minimal-layout .library-controls {
-  grid-template-columns: minmax(160px, 0.72fr) minmax(0, 2.28fr);
+  grid-template-columns: minmax(132px, 0.5fr) minmax(0, 2.5fr);
   gap: 6px;
 }
 
@@ -731,7 +740,7 @@ body::before {
 }
 
 .minimal-layout .slots-panel {
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .minimal-slot-footer {
@@ -745,7 +754,7 @@ body::before {
 }
 
 .minimal-transport-controls {
-  grid-template-columns: minmax(0, 220px);
+  grid-template-columns: repeat(2, minmax(0, 220px));
 }
 
 .minimal-transport-actions {
@@ -778,7 +787,7 @@ body::before {
   }
 }
 
-@media (max-width: 1220px) {
+@media (max-width: 1020px) {
   body.minimal-page {
     height: auto;
     overflow: auto;
@@ -791,6 +800,11 @@ body::before {
 
   .minimal-layout .panel {
     min-height: auto;
+  }
+
+  .minimal-layout .library-panel,
+  .minimal-layout .slots-panel {
+    height: auto;
   }
 
   .minimal-layout .library-controls {
@@ -830,7 +844,7 @@ body::before {
   }
 }
 
-@media (max-width: 920px) {
+@media (max-width: 760px) {
   .minimal-layout .library-results,
   .minimal-layout .slot-grid,
   .minimal-layout .simplified-filter-grid {

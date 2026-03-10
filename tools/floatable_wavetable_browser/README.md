@@ -16,6 +16,7 @@ The workflow is:
 - reorder the slot bank before committing
 - audition one candidate, one slot, or a slow morph across the filled slots
 - export the current bank as JSON or a concatenated bank WAV
+- load a previously exported selection JSON back into the slot board
 
 ## Manifest generation
 
@@ -83,7 +84,38 @@ http://127.0.0.1:8765/?demo=1
 
 - `Export Selection JSON`: writes the current `16` slots plus `256`-point signed
   cycle data for each slot
+- `Load Selection JSON`: reads one previously exported selection file from your
+  local machine and restores the `16` slots, with validation and clear errors
+  when the file shape is wrong
 - `Export Bank WAV`: writes a concatenated `16 x 256` mono WAV bank
 
-The tool does not emit the firmware C header yet. That can be added later from
-the exported JSON or directly inside this tool.
+## Convert JSON to a C header
+
+Use the standalone Python converter when you want a firmware-style header from
+an exported selection JSON file:
+
+```sh
+cd /Users/jeff/Toonbox/MTWS/mtws/tools/floatable_wavetable_browser
+python3 json_to_header.py floatable_selection_16.json
+```
+
+That writes a sibling header by default, for example:
+
+```text
+floatable_selection_16.h
+```
+
+You can also choose a destination path and C symbol explicitly:
+
+```sh
+python3 json_to_header.py floatable_selection_16.json \
+  --output /tmp/my_bank.h \
+  --symbol my_bank_16x256
+```
+
+The converter validates the exported shape before writing:
+
+- `slot_count == 16`
+- `point_count == 256`
+- `16` slot entries
+- `256` signed `int16_t` samples in every slot

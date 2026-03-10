@@ -4,6 +4,8 @@ const RESULT_RENDER_LIMIT = 160;
 const DEFAULT_PREVIEW_FREQUENCY_HZ = 110;
 const DEFAULT_MORPH_DURATION_SECONDS = 10;
 const DRAG_PAYLOAD_MIME = "application/x-mtws-curator-drag";
+const ZERO_CROSSINGS_FILTER_CAP = 48;
+const SLOT_REORDER_MANUAL_VALUE = "manual";
 const FILTER_SLIDER_CONFIGS = [
   {
     groupKey: "zeroCrossings",
@@ -13,7 +15,7 @@ const FILTER_SLIDER_CONFIGS = [
     maxInputId: "zeroCrossMaxInput",
     fillId: "zeroCrossRangeFill",
     readoutId: "zeroCrossReadout",
-    format: "integer",
+    format: "zero-crossings",
     defaultBounds: { min: 0, max: 0, step: 1 },
   },
   {
@@ -114,6 +116,8 @@ const dom = {
   exportWavButton: null,
   filterSliderGroups: new Map(),
   filterSliderInputs: [],
+  importSelectionButton: null,
+  importSelectionInput: null,
   libraryResults: null,
   manifestSummary: null,
   morphDurationInput: null,
@@ -127,6 +131,7 @@ const dom = {
   resultsSummary: null,
   selectedSlotSummary: null,
   slotGrid: null,
+  slotReorderSelect: null,
   sortSelect: null,
   statusLine: null,
   stopPlaybackButton: null,
@@ -161,6 +166,8 @@ function cacheDomReferences() {
   dom.exportJsonButton = document.getElementById("exportJsonButton");
   dom.exportWavButton = document.getElementById("exportWavButton");
   dom.filterSliderInputs = Array.from(document.querySelectorAll("[data-slider-group]"));
+  dom.importSelectionButton = document.getElementById("importSelectionButton");
+  dom.importSelectionInput = document.getElementById("importSelectionInput");
   dom.filterSliderGroups = new Map();
   FILTER_SLIDER_CONFIGS.forEach((config) => {
     dom.filterSliderGroups.set(config.groupKey, {
@@ -183,6 +190,7 @@ function cacheDomReferences() {
   dom.resultsSummary = document.getElementById("resultsSummary");
   dom.selectedSlotSummary = document.getElementById("selectedSlotSummary");
   dom.slotGrid = document.getElementById("slotGrid");
+  dom.slotReorderSelect = document.getElementById("slotReorderSelect");
   dom.sortSelect = document.getElementById("sortSelect");
   dom.statusLine = document.getElementById("statusLine");
   dom.stopPlaybackButton = document.getElementById("stopPlaybackButton");
@@ -202,6 +210,12 @@ function bindControlEvents() {
     dom.sortSelect.addEventListener("change", (event) => {
       state.sortKey = String(event.target.value || "name");
       applyFiltersAndRender();
+    });
+  }
+
+  if (dom.slotReorderSelect) {
+    dom.slotReorderSelect.addEventListener("change", (event) => {
+      handleSlotReorderSelection(event);
     });
   }
 
@@ -268,6 +282,16 @@ function bindControlEvents() {
   if (dom.exportWavButton) {
     dom.exportWavButton.addEventListener("click", () => {
       void exportBankWav();
+    });
+  }
+
+  if (dom.importSelectionButton && dom.importSelectionInput) {
+    dom.importSelectionButton.addEventListener("click", () => {
+      dom.importSelectionInput.click();
+    });
+
+    dom.importSelectionInput.addEventListener("change", (event) => {
+      void importSelectionJsonFile(event);
     });
   }
 
@@ -411,8 +435,7 @@ function resetCategoryFilters() {
  */
 function initializeLibraryFilterBoundsFromManifest() {
   const manifestWaves = Array.isArray(state.manifest?.waves) ? state.manifest.waves : [];
-  const zeroCrossingValues = manifestWaves.map((entry) => Number(entry.zero_crossings || 0));
-  const zeroCrossingBounds = buildSliderBoundsFromValues(zeroCrossingValues, 0, 0, 1);
+  const zeroCrossingBounds = { min: 0, max: ZERO_CROSSINGS_FILTER_CAP, step: 1 };
 
   state.filterBounds = {
     zeroCrossings: zeroCrossingBounds,
@@ -559,6 +582,16 @@ function syncLibraryFilterSlider(groupKey) {
  * Outputs: compact human-readable readout text shown next to the slider label.
  */
 function formatSliderRangeReadout(format, minValue, maxValue) {
+  const formatZeroCrossingValue = (value) => {
+    return value >= ZERO_CROSSINGS_FILTER_CAP
+      ? `${formatInteger(ZERO_CROSSINGS_FILTER_CAP)}+`
+      : formatInteger(value);
+  };
+
+  if (format === "zero-crossings") {
+    return `${formatZeroCrossingValue(minValue)}-${formatZeroCrossingValue(maxValue)}`;
+  }
+
   if (format === "percent") {
     return `${formatInteger(minValue)}-${formatInteger(maxValue)}%`;
   }
@@ -651,7 +684,8 @@ function filterEntries() {
       return false;
     }
 
-    if (!valueMatchesNumericRange(entry.zero_crossings, zeroCrossingsMin, zeroCrossingsMax)) {
+    const zeroCrossingBucket = Math.min(Number(entry.zero_crossings || 0), ZERO_CROSSINGS_FILTER_CAP);
+    if (!valueMatchesNumericRange(zeroCrossingBucket, zeroCrossingsMin, zeroCrossingsMax)) {
       return false;
     }
 
@@ -683,43 +717,72 @@ function filterEntries() {
  * Outputs: sorted array reference containing the same entries in new order.
  */
 function sortEntries(entries, sortKey) {
-  const compareText = (left, right) => {
-    const categoryCompare = left.category.localeCompare(right.category);
-    if (categoryCompare !== 0) {
-      return categoryCompare;
-    }
-    return left.display_name.localeCompare(right.display_name);
-  };
+  entries.sort(createEntryComparator(sortKey));
+  return entries;
+}
 
-  entries.sort((left, right) => {
+/**
+ * Compare two manifest entries by their stable text ordering.
+ * Inputs: left - first manifest entry, right - second manifest entry.
+ * Outputs: negative/zero/positive number suitable for Array.prototype.sort.
+ */
+function compareEntryNames(left, right) {
+  const categoryCompare = left.category.localeCompare(right.category);
+  if (categoryCompare !== 0) {
+    return categoryCompare;
+  }
+  return left.display_name.localeCompare(right.display_name);
+}
+
+/**
+ * Build one reusable entry comparator for the requested library or slot sort mode.
+ * Inputs: sortKey - one user-visible sort identifier such as brightness_desc or zero_crossings_asc.
+ * Outputs: comparator function that sorts manifest entries and falls back to name ordering on ties.
+ */
+function createEntryComparator(sortKey) {
+  return (left, right) => {
     if (sortKey === "brightness_desc") {
-      return right.brightness_score - left.brightness_score || compareText(left, right);
+      return right.brightness_score - left.brightness_score || compareEntryNames(left, right);
     }
 
     if (sortKey === "brightness_asc") {
-      return left.brightness_score - right.brightness_score || compareText(left, right);
+      return left.brightness_score - right.brightness_score || compareEntryNames(left, right);
     }
 
     if (sortKey === "zero_crossings_asc") {
-      return left.zero_crossings - right.zero_crossings || compareText(left, right);
+      return left.zero_crossings - right.zero_crossings || compareEntryNames(left, right);
     }
 
     if (sortKey === "zero_crossings_desc") {
-      return right.zero_crossings - left.zero_crossings || compareText(left, right);
+      return right.zero_crossings - left.zero_crossings || compareEntryNames(left, right);
+    }
+
+    if (sortKey === "high_ratio_desc") {
+      return right.high_harmonic_ratio - left.high_harmonic_ratio || compareEntryNames(left, right);
+    }
+
+    if (sortKey === "high_ratio_asc") {
+      return left.high_harmonic_ratio - right.high_harmonic_ratio || compareEntryNames(left, right);
     }
 
     if (sortKey === "odd_ratio_desc") {
-      return right.odd_harmonic_ratio - left.odd_harmonic_ratio || compareText(left, right);
+      return right.odd_harmonic_ratio - left.odd_harmonic_ratio || compareEntryNames(left, right);
+    }
+
+    if (sortKey === "odd_ratio_asc") {
+      return left.odd_harmonic_ratio - right.odd_harmonic_ratio || compareEntryNames(left, right);
+    }
+
+    if (sortKey === "dominant_harmonic_desc") {
+      return right.dominant_harmonic - left.dominant_harmonic || compareEntryNames(left, right);
     }
 
     if (sortKey === "dominant_harmonic_asc") {
-      return left.dominant_harmonic - right.dominant_harmonic || compareText(left, right);
+      return left.dominant_harmonic - right.dominant_harmonic || compareEntryNames(left, right);
     }
 
-    return compareText(left, right);
-  });
-
-  return entries;
+    return compareEntryNames(left, right);
+  };
 }
 
 /**
@@ -887,7 +950,6 @@ function createLibraryCard(entry) {
 
   chipRow.appendChild(createChip(`zc ${formatInteger(entry.zero_crossings)}`));
   chipRow.appendChild(createChip(`bright ${formatPercent(entry.brightness_score)}`));
-  chipRow.appendChild(createChip(`odd ${formatPercent(entry.odd_harmonic_ratio)}`));
 
   const actions = document.createElement("div");
   actions.className = "card-actions";
@@ -902,28 +964,7 @@ function createLibraryCard(entry) {
     void playEntryPreview(entry.id, `Previewing ${entry.display_name}.`);
   });
 
-  const inspectButton = document.createElement("button");
-  inspectButton.className = "ghost-button";
-  inspectButton.type = "button";
-  inspectButton.textContent = dom.candidateTitle ? "Inspect" : "Select";
-  inspectButton.addEventListener("click", (event) => {
-    event.stopPropagation();
-    selectEntry(entry.id);
-  });
-
-  const placeButton = document.createElement("button");
-  placeButton.className = "ghost-button";
-  placeButton.type = "button";
-  placeButton.textContent = `Add ${String(state.selectedSlotIndex + 1).padStart(2, "0")}`;
-  placeButton.addEventListener("click", (event) => {
-    event.stopPropagation();
-    selectEntry(entry.id);
-    assignEntryToSlot(entry.id, state.selectedSlotIndex);
-  });
-
   actions.appendChild(playButton);
-  actions.appendChild(inspectButton);
-  actions.appendChild(placeButton);
 
   card.appendChild(header);
   card.appendChild(previewCanvas);
@@ -1116,13 +1157,6 @@ function createSlotCard(slot, slotIndex) {
 
   header.appendChild(textColumn);
 
-  if (slotIndex === state.selectedSlotIndex) {
-    const selectChip = document.createElement("span");
-    selectChip.className = "metric-pill";
-    selectChip.textContent = "target";
-    header.appendChild(selectChip);
-  }
-
   card.appendChild(header);
 
   if (!slot) {
@@ -1141,7 +1175,6 @@ function createSlotCard(slot, slotIndex) {
   metricRow.className = "metric-row";
   metricRow.appendChild(createMetricPill(`zc ${formatInteger(entry.zero_crossings)}`));
   metricRow.appendChild(createMetricPill(`bright ${formatPercent(entry.brightness_score)}`));
-  metricRow.appendChild(createMetricPill(`odd ${formatPercent(entry.odd_harmonic_ratio)}`));
   card.appendChild(metricRow);
 
   card.draggable = true;
@@ -1250,6 +1283,10 @@ function updateActionButtons() {
 
   if (dom.exportJsonButton) {
     dom.exportJsonButton.disabled = filledSlotCount === 0;
+  }
+
+  if (dom.slotReorderSelect) {
+    dom.slotReorderSelect.disabled = filledSlotCount < 2;
   }
 
   if (dom.exportWavButton) {
@@ -1408,6 +1445,73 @@ function replaceSlotsFromEntries(entries) {
   state.selectedSlotIndex = 0;
   state.selectedEntryId = entries[0]?.id || null;
   renderAll({ preserveLibraryScroll: true });
+}
+
+/**
+ * Replace the current slot bank from one validated imported slot payload array.
+ * Inputs: importedSlots - array containing null for empty slots or slot objects with known entry IDs.
+ * Outputs: none. The slot bank is overwritten to match the imported selection exactly.
+ */
+function replaceSlotsFromImportedSelection(importedSlots) {
+  state.slots = importedSlots.map((slot) => (slot ? { entryId: slot.entryId } : null));
+
+  const firstFilledIndex = state.slots.findIndex((slot) => slot !== null);
+  state.selectedSlotIndex = firstFilledIndex >= 0 ? firstFilledIndex : 0;
+  state.selectedEntryId = firstFilledIndex >= 0 ? state.slots[firstFilledIndex].entryId : null;
+  renderAll({ preserveLibraryScroll: true });
+}
+
+/**
+ * Handle one slot reorder dropdown change and immediately apply the requested bulk ordering.
+ * Inputs: event - browser change event from the slot reorder select control.
+ * Outputs: none. Filled slots may be resorted and the dropdown is reset to Current Order.
+ */
+function handleSlotReorderSelection(event) {
+  const reorderKey = String(event.target.value || SLOT_REORDER_MANUAL_VALUE);
+  if (reorderKey === SLOT_REORDER_MANUAL_VALUE) {
+    return;
+  }
+
+  const optionLabel = event.target.selectedOptions?.[0]?.textContent?.trim() || reorderKey;
+  reorderFilledSlots(reorderKey, optionLabel);
+  event.target.value = SLOT_REORDER_MANUAL_VALUE;
+}
+
+/**
+ * Reorder the currently filled slots by one metadata sort mode while leaving empty slots at the end.
+ * Inputs: sortKey - one supported entry sort identifier, label - human-readable label for the status line.
+ * Outputs: none. Filled slot assignments are rewritten in sorted order and the UI rerenders.
+ */
+function reorderFilledSlots(sortKey, label) {
+  const filledEntries = state.slots
+    .filter((slot) => slot !== null)
+    .map((slot) => getEntryById(slot.entryId))
+    .filter((entry) => entry !== null);
+
+  if (filledEntries.length < 2) {
+    setStatusMessage("Fill at least two slots before reordering them.");
+    return;
+  }
+
+  const selectedSlotEntryId = state.slots[state.selectedSlotIndex]?.entryId || null;
+  const sortedEntries = filledEntries.slice().sort(createEntryComparator(sortKey));
+  const reorderedSlots = sortedEntries.map((entry) => ({ entryId: entry.id }));
+
+  while (reorderedSlots.length < TARGET_SLOT_COUNT) {
+    reorderedSlots.push(null);
+  }
+
+  state.slots = reorderedSlots;
+
+  if (selectedSlotEntryId) {
+    const selectedIndex = state.slots.findIndex((slot) => slot?.entryId === selectedSlotEntryId);
+    if (selectedIndex >= 0) {
+      state.selectedSlotIndex = selectedIndex;
+    }
+  }
+
+  renderAll({ preserveLibraryScroll: true });
+  setStatusMessage(`Reordered ${formatInteger(filledEntries.length)} filled slots by ${label}.`);
 }
 
 /**
@@ -2218,6 +2322,120 @@ async function exportSelectionJson() {
     "floatable_selection_16.json",
   );
   setStatusMessage("Exported selection JSON.");
+}
+
+/**
+ * Import one previously exported selection JSON file from a local file picker.
+ * Inputs: event - browser change event fired by the hidden file input element.
+ * Outputs: Promise<void>. The slot board is replaced when the file validates cleanly.
+ */
+async function importSelectionJsonFile(event) {
+  const input = event.target;
+  const selectedFile = input?.files?.[0];
+
+  if (!selectedFile) {
+    return;
+  }
+
+  try {
+    if (!state.manifest || state.entryMap.size === 0) {
+      throw new Error("Load the AKWF manifest before importing a selection JSON file.");
+    }
+
+    const fileText = await selectedFile.text();
+    const importedPayload = JSON.parse(fileText);
+    const importedSlots = validateImportedSelectionPayload(importedPayload);
+    replaceSlotsFromImportedSelection(importedSlots);
+    setStatusMessage(`Loaded ${selectedFile.name} into the slot board.`);
+  } catch (error) {
+    setStatusMessage(`Could not load selection JSON: ${String(error.message || error)}`);
+  } finally {
+    input.value = "";
+  }
+}
+
+/**
+ * Validate one imported selection payload and convert it into slot assignments.
+ * Inputs: importedPayload - parsed JSON object loaded from a local selection export file.
+ * Outputs: array containing null for empty slots or objects with known manifest entry IDs.
+ */
+function validateImportedSelectionPayload(importedPayload) {
+  if (!importedPayload || typeof importedPayload !== "object" || Array.isArray(importedPayload)) {
+    throw new Error("Selection JSON must contain one top-level object.");
+  }
+
+  if (Number(importedPayload.slot_count) !== TARGET_SLOT_COUNT) {
+    throw new Error(`Expected slot_count ${TARGET_SLOT_COUNT}, received ${String(importedPayload.slot_count)}.`);
+  }
+
+  if (Number(importedPayload.point_count) !== CYCLE_POINT_COUNT) {
+    throw new Error(`Expected point_count ${CYCLE_POINT_COUNT}, received ${String(importedPayload.point_count)}.`);
+  }
+
+  if (!Array.isArray(importedPayload.slots) || importedPayload.slots.length !== TARGET_SLOT_COUNT) {
+    throw new Error(`Selection JSON must contain exactly ${TARGET_SLOT_COUNT} slot entries.`);
+  }
+
+  return importedPayload.slots.map((slotPayload, slotIndex) => {
+    return validateImportedSlotPayload(slotPayload, slotIndex);
+  });
+}
+
+/**
+ * Validate one imported slot payload and map it to a known manifest entry when occupied.
+ * Inputs: slotPayload - one slot object from the imported JSON payload, slotIndex - zero-based slot index.
+ * Outputs: null for empty slots or an object containing one known manifest entry ID.
+ */
+function validateImportedSlotPayload(slotPayload, slotIndex) {
+  if (!slotPayload || typeof slotPayload !== "object" || Array.isArray(slotPayload)) {
+    throw new Error(`Slot ${String(slotIndex + 1).padStart(2, "0")} is not a valid object.`);
+  }
+
+  if ("slot_index" in slotPayload && Number(slotPayload.slot_index) !== slotIndex) {
+    throw new Error(
+      `Slot ${String(slotIndex + 1).padStart(2, "0")} has slot_index ${String(slotPayload.slot_index)}.`,
+    );
+  }
+
+  validateImportedCyclePoints(slotPayload.cycle_points_q15_256, slotIndex);
+
+  if (slotPayload.empty) {
+    return null;
+  }
+
+  if (typeof slotPayload.id !== "string" || slotPayload.id.length === 0) {
+    throw new Error(`Slot ${String(slotIndex + 1).padStart(2, "0")} is missing its wave ID.`);
+  }
+
+  const knownEntry = getEntryById(slotPayload.id);
+  if (!knownEntry) {
+    throw new Error(
+      `Slot ${String(slotIndex + 1).padStart(2, "0")} references unknown wave ID ${slotPayload.id}.`,
+    );
+  }
+
+  return { entryId: knownEntry.id };
+}
+
+/**
+ * Validate the 256 signed Q15 cycle points stored for one imported slot.
+ * Inputs: cyclePoints - candidate point array from one slot payload, slotIndex - zero-based slot index.
+ * Outputs: none. The function throws when the point array is missing or malformed.
+ */
+function validateImportedCyclePoints(cyclePoints, slotIndex) {
+  if (!Array.isArray(cyclePoints) || cyclePoints.length !== CYCLE_POINT_COUNT) {
+    throw new Error(
+      `Slot ${String(slotIndex + 1).padStart(2, "0")} must contain ${CYCLE_POINT_COUNT} cycle points.`,
+    );
+  }
+
+  cyclePoints.forEach((pointValue, pointIndex) => {
+    if (!Number.isInteger(pointValue) || pointValue < -32768 || pointValue > 32767) {
+      throw new Error(
+        `Slot ${String(slotIndex + 1).padStart(2, "0")} has an invalid sample at point ${formatInteger(pointIndex)}.`,
+      );
+    }
+  });
 }
 
 /**

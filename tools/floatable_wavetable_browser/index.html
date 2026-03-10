@@ -80,6 +80,12 @@
                   <option value="brightness_asc">Brightness: Low to High</option>
                   <option value="zero_crossings_asc">Zero Crossings: Low to High</option>
                   <option value="zero_crossings_desc">Zero Crossings: High to Low</option>
+                  <option value="dominant_harmonic_desc">Dominant Harmonic: High to Low</option>
+                  <option value="dominant_harmonic_asc">Dominant Harmonic: Low to High</option>
+                  <option value="high_ratio_desc">High Harmonics: High to Low</option>
+                  <option value="high_ratio_asc">High Harmonics: Low to High</option>
+                  <option value="odd_ratio_desc">Odd Harmonics: High to Low</option>
+                  <option value="odd_ratio_asc">Odd Harmonics: Low to High</option>
                 </select>
               </label>
             </div>
@@ -99,6 +105,7 @@
               type="button"
               data-morph-trigger="true"
             >Play Morph Sweep</button>
+            <button id="stopPlaybackButton" class="secondary-button" type="button">Stop</button>
           </div>
           <p class="info-text">Click to target. Drag to swap.</p>
         </div>
@@ -116,13 +123,30 @@
               <span class="control-label">Audition Pitch (Hz)</span>
               <input id="previewPitchInput" class="text-input" type="number" min="20" max="880" step="1" value="110">
             </label>
+
+            <label class="control-field">
+              <span class="control-label">Reorder Slots</span>
+              <select id="slotReorderSelect" class="select-input">
+                <option value="manual">Current Order</option>
+                <option value="name">Name</option>
+                <option value="brightness_desc">Brightness: High to Low</option>
+                <option value="brightness_asc">Brightness: Low to High</option>
+                <option value="zero_crossings_desc">Zero Crossings: High to Low</option>
+                <option value="zero_crossings_asc">Zero Crossings: Low to High</option>
+                <option value="dominant_harmonic_desc">Dominant Harmonic: High to Low</option>
+                <option value="dominant_harmonic_asc">Dominant Harmonic: Low to High</option>
+                <option value="high_ratio_desc">High Harmonics: High to Low</option>
+                <option value="high_ratio_asc">High Harmonics: Low to High</option>
+                <option value="odd_ratio_desc">Odd Harmonics: High to Low</option>
+                <option value="odd_ratio_asc">Odd Harmonics: Low to High</option>
+              </select>
+            </label>
           </div>
 
           <div class="action-row minimal-transport-actions">
-            <button id="previewTargetSlotButton" class="primary-button" type="button">Preview Target Slot</button>
-            <button id="stopPlaybackButton" class="secondary-button" type="button">Stop</button>
+            <button id="importSelectionButton" class="secondary-button" type="button">Load Selection JSON</button>
             <button id="exportJsonButton" class="secondary-button" type="button">Export Selection JSON</button>
-            <button id="exportWavButton" class="secondary-button" type="button">Export Bank WAV</button>
+            <input id="importSelectionInput" type="file" accept=".json,application/json" hidden>
           </div>
         </section>
       </section>
