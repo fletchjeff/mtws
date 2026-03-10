@@ -13,24 +13,32 @@ class FloatableEngine : public EngineInterface {
   void RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) override;
 
  private:
-  // Q12 interpolation helper where `t_q12 = 0` returns `a` and `4096` returns `b`.
-  static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
-
   static constexpr uint32_t kNumSourceWaves = 16U;
   static constexpr uint32_t kInterpolationCells = kNumSourceWaves - 1U;
-  static constexpr uint32_t kRenderedTableSize = 256U;
-  static constexpr uint32_t kRenderedTableMask = kRenderedTableSize - 1U;
-  static constexpr uint32_t kRenderedTableIndexShift = 24U;
-  static constexpr uint32_t kRenderedTableFracShift = 12U;
+  static constexpr uint32_t kSourceTableSize = 256U;
+  static constexpr uint32_t kSourceTableMask = kSourceTableSize - 1U;
+  static constexpr uint32_t kSourceTableIndexShift = 24U;
+  static constexpr uint32_t kSourceTableFracShift = 12U;
+
+  // Q12 interpolation helper where `t_q12 = 0` returns `a` and `4096` returns `b`.
+  static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
+  // Converts a 0..4095 axis code into a base wave index (0..14) and Q12
+  // fraction (0..4096) between that index and index + 1.
+  // Inputs: axis_code in knob-domain units.
+  // Outputs: wave_index and wave_frac_q12 passed by reference.
+  static void ComputeWaveSelection(uint32_t axis_code, uint8_t& wave_index, uint16_t& wave_frac_q12);
+  // Renders one output sample from a source bank using phase interpolation
+  // within each source wave and a second interpolation across adjacent waves.
+  // Inputs: source bank, wave selection, and current phase components.
+  // Output: signed 12-bit clamped sample ready for DAC output.
+  static int32_t RenderMorphedBankSample(const int16_t (*source_waves)[kSourceTableSize],
+                                         uint32_t wave_index,
+                                         uint32_t wave_frac_q12,
+                                         uint32_t sample_index,
+                                         uint32_t sample_next,
+                                         uint32_t sample_frac_q12);
 
   uint32_t phase_;
-  // Cached 256-point render targets copied into each published control frame.
-  // These let the control core update X and Y on alternating ticks without
-  // leaving one output table uninitialized in the double-buffer handoff.
-  int16_t cached_rendered_out1_[kRenderedTableSize];
-  int16_t cached_rendered_out2_[kRenderedTableSize];
-  bool caches_primed_;
-  bool render_out1_on_next_tick_;
 };
 
 }  // namespace mtws

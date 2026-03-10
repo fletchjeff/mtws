@@ -63,10 +63,17 @@ struct BenderControlFrame {
 struct FloatableControlFrame {
   // Oscillator phase increment in 0.32 phase units/sample.
   uint32_t phase_inc;
-  // Final 256-sample wavetable rendered for Out1 at control rate.
-  int16_t rendered_out1[256];
-  // Final 256-sample wavetable rendered for Out2 at control rate.
-  int16_t rendered_out2[256];
+  // Selects the active source bank pair.
+  // 0: Out1/Out2 = bank1/bank2, 1: Out1/Out2 = bank3/bank4.
+  uint8_t use_alt_banks;
+  // Base source-wave index for Out1 morph in 0..14.
+  uint8_t out1_wave_index;
+  // Q12 morph fraction for Out1 in 0..4096 between out1_wave_index and +1.
+  uint16_t out1_wave_frac_q12;
+  // Base source-wave index for Out2 morph in 0..14.
+  uint8_t out2_wave_index;
+  // Q12 morph fraction for Out2 in 0..4096 between out2_wave_index and +1.
+  uint16_t out2_wave_frac_q12;
 };
 
 struct CumulusControlFrame {

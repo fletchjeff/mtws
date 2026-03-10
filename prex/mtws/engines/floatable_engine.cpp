@@ -8,100 +8,19 @@
 namespace mtws {
 
 namespace {
-constexpr uint32_t kNumSourceWaves = 16U;
-constexpr uint32_t kInterpolationCells = kNumSourceWaves - 1U;
-constexpr uint32_t kRenderedTableSize = 256U;
-
-// Interpolates between `a` and `b` using a Q12 fraction. `4096` is used
-// instead of `4095` so the endpoint can reach the last stored sample exactly.
-inline int32_t LerpQ12Local(int32_t a, int32_t b, uint32_t t_q12) {
-  if (t_q12 > 4096U) t_q12 = 4096U;
-  return a + ((b - a) * int32_t(t_q12) >> 12);
-}
-
-// Clamps the rendered source-domain sample before it is stored into the control
-// frame. The curated bank headers already contain int16_t values, but the lerp
-// runs in int32_t so the final write is explicit and safe.
-inline int16_t ClampToInt16(int32_t sample) {
-  if (sample > 32767) return 32767;
-  if (sample < -32768) return -32768;
-  return int16_t(sample);
-}
-
 // Clamps the audio sample to the signed 12-bit ComputerCard output range.
 inline int32_t ClampAudio12(int32_t sample) {
   if (sample > 2047) return 2047;
   if (sample < -2048) return -2048;
   return sample;
 }
-
-// Builds one finished 256-sample wavetable from a 16-wave source bank.
-// `axis_code` is the knob-domain 0..4095 value. It is mapped across 15
-// interpolation cells so `0` selects wave 0 and `4095` reaches wave 15 exactly.
-void RenderBankFromAxis(const int16_t source_waves[kNumSourceWaves][kRenderedTableSize],
-                        uint32_t axis_code,
-                        int16_t rendered_wave[kRenderedTableSize]) {
-  if (axis_code > 4095U) axis_code = 4095U;
-
-  uint32_t wave_pos_q12 = axis_code * kInterpolationCells;
-  uint32_t wave_a = wave_pos_q12 >> 12;
-  if (wave_a > (kNumSourceWaves - 2U)) wave_a = kNumSourceWaves - 2U;
-  uint32_t wave_b = wave_a + 1U;
-  uint32_t wave_frac_q12 = wave_pos_q12 & 0x0FFFU;
-  if (axis_code == 4095U) wave_frac_q12 = 4096U;
-
-  for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
-    int32_t sample_a = source_waves[wave_a][sample_index];
-    int32_t sample_b = source_waves[wave_b][sample_index];
-    rendered_wave[sample_index] = ClampToInt16(LerpQ12Local(sample_a, sample_b, wave_frac_q12));
-  }
-}
 }  // namespace
 
-// Initializes the oscillator with a cleared shared phase accumulator and blank
-// cached rendered tables used by the alternating control-rate renderer.
-FloatableEngine::FloatableEngine()
-    : phase_(0), caches_primed_(false), render_out1_on_next_tick_(true) {
-  for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
-    cached_rendered_out1_[sample_index] = 0;
-    cached_rendered_out2_[sample_index] = 0;
-  }
-}
+// Initializes the oscillator with a cleared phase accumulator.
+FloatableEngine::FloatableEngine() : phase_(0) {}
 
 void FloatableEngine::OnSelected() {
   // Keep phase continuity for smooth slot changes.
-}
-
-// Copies pitch state and updates one rendered table per control tick. Out1 and
-// Out2 table renders are alternated so each axis is recomputed every other
-// control frame, which reduces core-1 interpolation workload. Both cached
-// tables are then copied into the published control frame so the audio core
-// always receives valid Out1 and Out2 tables.
-void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
-  frame.floatable.phase_inc = global.pitch_inc;
-
-  const int16_t (*out1_source)[kRenderedTableSize] =
-      global.mode_alt ? floatable_bank_3_16x256 : floatable_bank_1_16x256;
-  const int16_t (*out2_source)[kRenderedTableSize] =
-      global.mode_alt ? floatable_bank_4_16x256 : floatable_bank_2_16x256;
-
-  if (!caches_primed_) {
-    RenderBankFromAxis(out1_source, global.macro_x, cached_rendered_out1_);
-    RenderBankFromAxis(out2_source, global.macro_y, cached_rendered_out2_);
-    caches_primed_ = true;
-    render_out1_on_next_tick_ = true;
-  } else if (render_out1_on_next_tick_) {
-    RenderBankFromAxis(out1_source, global.macro_x, cached_rendered_out1_);
-    render_out1_on_next_tick_ = false;
-  } else {
-    RenderBankFromAxis(out2_source, global.macro_y, cached_rendered_out2_);
-    render_out1_on_next_tick_ = true;
-  }
-
-  for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
-    frame.floatable.rendered_out1[sample_index] = cached_rendered_out1_[sample_index];
-    frame.floatable.rendered_out2[sample_index] = cached_rendered_out2_[sample_index];
-  }
 }
 
 // Interpolates between `a` and `b` using a Q12 fraction. `4096` is used instead
@@ -111,28 +30,95 @@ int32_t FloatableEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
   return a + ((b - a) * int32_t(t_q12) >> 12);
 }
 
-// Reads the two rendered tables at audio rate. The top 8 phase bits select the
-// integer sample in the 256-point table and the next 12 bits provide the Q12
-// phase interpolation fraction. This reduces audio-rate work compared with the
-// old 64x512 direct-read path at the cost of storing two rendered tables per
-// double-buffered control frame.
+// Converts one axis code into a source-wave selection pair.
+// Inputs:
+// - axis_code: control-domain morph coordinate in 0..4095.
+// Outputs:
+// - wave_index: base source wave in 0..14.
+// - wave_frac_q12: Q12 fraction in 0..4096 toward wave_index + 1.
+void FloatableEngine::ComputeWaveSelection(uint32_t axis_code,
+                                           uint8_t& wave_index,
+                                           uint16_t& wave_frac_q12) {
+  if (axis_code > 4095U) axis_code = 4095U;
+
+  uint32_t wave_pos_q12 = axis_code * kInterpolationCells;
+  uint32_t index = wave_pos_q12 >> 12;
+  if (index > (kNumSourceWaves - 2U)) index = kNumSourceWaves - 2U;
+
+  uint32_t frac_q12 = wave_pos_q12 & 0x0FFFU;
+  if (axis_code == 4095U) frac_q12 = 4096U;
+
+  wave_index = static_cast<uint8_t>(index);
+  wave_frac_q12 = static_cast<uint16_t>(frac_q12);
+}
+
+// Renders one output sample from a source bank using two interpolation stages.
+// Inputs:
+// - source_waves: selected bank set with shape [16][256].
+// - wave_index/wave_frac_q12: morph position between adjacent source waves.
+// - sample_index/sample_next/sample_frac_q12: oscillator phase components.
+// Output:
+// - one signed 12-bit clamped sample.
+int32_t FloatableEngine::RenderMorphedBankSample(const int16_t (*source_waves)[kSourceTableSize],
+                                                 uint32_t wave_index,
+                                                 uint32_t wave_frac_q12,
+                                                 uint32_t sample_index,
+                                                 uint32_t sample_next,
+                                                 uint32_t sample_frac_q12) {
+  if (wave_index > (kNumSourceWaves - 2U)) wave_index = kNumSourceWaves - 2U;
+
+  const int16_t* wave_a = source_waves[wave_index];
+  const int16_t* wave_b = source_waves[wave_index + 1U];
+
+  int32_t sample_a = LerpQ12(wave_a[sample_index], wave_a[sample_next], sample_frac_q12);
+  int32_t sample_b = LerpQ12(wave_b[sample_index], wave_b[sample_next], sample_frac_q12);
+  int32_t morphed_sample = LerpQ12(sample_a, sample_b, wave_frac_q12);
+  return ClampAudio12(morphed_sample >> 4);
+}
+
+// Publishes compact floatable state at control rate.
+// Inputs:
+// - global control frame (pitch, alt flag, and axis controls).
+// Output:
+// - floatable engine frame with compact morph parameters only.
+void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
+  frame.floatable.phase_inc = global.pitch_inc;
+  frame.floatable.use_alt_banks = global.mode_alt ? 1U : 0U;
+  ComputeWaveSelection(global.macro_x, frame.floatable.out1_wave_index, frame.floatable.out1_wave_frac_q12);
+  ComputeWaveSelection(global.macro_y, frame.floatable.out2_wave_index, frame.floatable.out2_wave_frac_q12);
+}
+
+// Renders floatable audio directly from source waves at audio rate.
+// Inputs:
+// - compact floatable control data from the active double-buffered frame.
+// Outputs:
+// - out1/out2 signed 12-bit samples.
 void FloatableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const FloatableControlFrame& w = frame.floatable;
 
   phase_ += w.phase_inc;
 
-  uint32_t sample_index = phase_ >> kRenderedTableIndexShift;
-  uint32_t sample_next = (sample_index + 1U) & kRenderedTableMask;
-  uint32_t sample_frac = (phase_ >> kRenderedTableFracShift) & 0x0FFFU;
+  uint32_t sample_index = phase_ >> kSourceTableIndexShift;
+  uint32_t sample_next = (sample_index + 1U) & kSourceTableMask;
+  uint32_t sample_frac_q12 = (phase_ >> kSourceTableFracShift) & 0x0FFFU;
 
-  auto render_output = [&](const int16_t wave[kRenderedTableSize]) -> int32_t {
-    int32_t sample_a = wave[sample_index];
-    int32_t sample_b = wave[sample_next];
-    return ClampAudio12(LerpQ12(sample_a, sample_b, sample_frac) >> 4);
-  };
+  const int16_t (*out1_source)[kSourceTableSize] =
+      (w.use_alt_banks != 0U) ? floatable_bank_3_16x256 : floatable_bank_1_16x256;
+  const int16_t (*out2_source)[kSourceTableSize] =
+      (w.use_alt_banks != 0U) ? floatable_bank_4_16x256 : floatable_bank_2_16x256;
 
-  out1 = render_output(w.rendered_out1);
-  out2 = render_output(w.rendered_out2);
+  out1 = RenderMorphedBankSample(out1_source,
+                                 w.out1_wave_index,
+                                 w.out1_wave_frac_q12,
+                                 sample_index,
+                                 sample_next,
+                                 sample_frac_q12);
+  out2 = RenderMorphedBankSample(out2_source,
+                                 w.out2_wave_index,
+                                 w.out2_wave_frac_q12,
+                                 sample_index,
+                                 sample_next,
+                                 sample_frac_q12);
 }
 
 }  // namespace mtws

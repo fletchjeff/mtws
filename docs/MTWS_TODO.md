@@ -28,19 +28,12 @@ after each hardware test loop so pending work stays visible.
 ### 3. Better wavetables for floatable
 - `Status`: In Progress
 - `Scope`: [prex/floatable/floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp), [prex/mtws/wavetables/floatable_bank_1_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_1_16x256.h), [prex/mtws/wavetables/floatable_bank_2_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_2_16x256.h), [prex/mtws/wavetables/floatable_bank_3_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_3_16x256.h), [prex/mtws/wavetables/floatable_bank_4_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_4_16x256.h)
-- `Notes`: The curated browser exports are now checked in as shared `4 x 16 x 256` bank headers, and both the standalone `floatable` target and integrated `mtws` render two finished `256`-sample tables at control rate before the audio core phase-reads them. The remaining work is hardware validation of bank order, stereo usefulness, and whether any wave ordering still needs refinement.
-  Investigation plan for the current integrated `mtws` glitch:
-  Test 1: single wavetable, no `Y`.
-  1. Comment out the second wavetable in integrated `mtws`; disable it without deleting the code.
-  2. Comment out the `Y` control in integrated `mtws`; disable it without deleting the code.
-  3. Send `Out1` to `Out2`.
-  4. Disable `alt` mode without deleting the code.
-  Goal: confirm whether the glitch is specifically caused by running two rendered wavetables at once inside integrated `mtws`.
-  Test 2: restore the full floatable path with two wavetables and `alt`.
-  1. Re-enable both rendered wavetable outputs and `alt` mode.
-  2. Try alternating control-rate updates so `X` and `Y` are calculated on separate control ticks: one control tick updates `X`, the next updates `Y`, then repeat.
-  Goal: check whether halving the per-tick `X`/`Y` control work removes the glitch even though each axis updates at half the current rate.
-- `What to test`: Sweep all `16` waves in Out1 and Out2 for both normal and alt, confirm Alt swaps to the second bank pair cleanly, listen for any weak transitions or clicks that would justify reordering the curated banks, then run the dedicated glitch investigation plan above on integrated `mtws`.
+- `Notes`: The curated browser exports are checked in as shared `4 x 16 x 256` bank headers. The first-pass `128` rendered-table experiment did not remove the remaining floatable glitches. The integrated `mtws` build now uses a Braids-style architecture: control tick publishes compact morph parameters only, and `RenderSample()` performs direct per-sample wavetable interpolation/morphing from the source banks. This build is currently hardware-usable and stable at `1 kHz` control rate (`48` sample divisor), with MIDI note/gate active and MIDI CC mapping still disabled. Reported side effect: floatable morph timbre is slightly different from the previous rendered-table path.
+  Investigation sequence:
+  1. `128` rendered-table pass: completed, insufficient glitch reduction.
+  2. Braids-style compact-param + audio-rate morph pass: implemented and currently preferred for stability.
+  Goal: keep the stability gains while tuning the morph behavior if needed.
+- `What to test`: Sweep all `16` waves in Out1 and Out2 for both normal and alt, compare morph tone against the previous rendered-table build, and confirm no regressions in other engines while MIDI note/gate remains active.
 
 ### 4. Fix the global VCA
 - `Status`: Done
