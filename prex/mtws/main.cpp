@@ -263,6 +263,7 @@ int main() {
   sleep_ms(10);
   set_sys_clock_khz(200000, true);
 
-  mtws::MTWSApp app;
+  // Keep the large double-buffered control frames out of the main stack.
+  static mtws::MTWSApp app;
   app.Run();
 }

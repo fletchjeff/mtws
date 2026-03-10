@@ -27,9 +27,20 @@ after each hardware test loop so pending work stays visible.
 
 ### 3. Better wavetables for floatable
 - `Status`: In Progress
-- `Scope`: [prex/floatable/floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp), [prex/floatable/floatable_wavetable_1_reversed_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_1_reversed_64x256.h), [prex/floatable/floatable_wavetable_2_original_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_2_original_64x256.h), [prex/floatable/floatable_wavetable_3_original_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_3_original_64x256.h), [prex/floatable/floatable_wavetable_4_reversed_64x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_wavetable_4_reversed_64x256.h), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp)
-- `Notes`: The engine mechanics are now in a good place. Integrated `mtws` has stable bilinear X/Y interpolation over the `64 x 512` bank A/B tables, and the standalone `floatable` target has a stable `4 x 64 x 256` rendered-table sandbox for bank-routing tests. The current solo banks are intentionally duplicated (`1 == 4`, `2 == 3`) to prove routing, so the remaining work is bank content design, ordering, and stereo pairing.
-- `What to test`: Build curated four-bank source sets in the standalone solo engine first, sweep the full range for continuity and usefulness, then port the chosen bank strategy into integrated `mtws` and compare stereo behavior on hardware.
+- `Scope`: [prex/floatable/floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp), [prex/mtws/engines/floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp), [prex/mtws/wavetables/floatable_bank_1_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_1_16x256.h), [prex/mtws/wavetables/floatable_bank_2_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_2_16x256.h), [prex/mtws/wavetables/floatable_bank_3_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_3_16x256.h), [prex/mtws/wavetables/floatable_bank_4_16x256.h](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables/floatable_bank_4_16x256.h)
+- `Notes`: The curated browser exports are now checked in as shared `4 x 16 x 256` bank headers, and both the standalone `floatable` target and integrated `mtws` render two finished `256`-sample tables at control rate before the audio core phase-reads them. The remaining work is hardware validation of bank order, stereo usefulness, and whether any wave ordering still needs refinement.
+  Investigation plan for the current integrated `mtws` glitch:
+  Test 1: single wavetable, no `Y`.
+  1. Comment out the second wavetable in integrated `mtws`; disable it without deleting the code.
+  2. Comment out the `Y` control in integrated `mtws`; disable it without deleting the code.
+  3. Send `Out1` to `Out2`.
+  4. Disable `alt` mode without deleting the code.
+  Goal: confirm whether the glitch is specifically caused by running two rendered wavetables at once inside integrated `mtws`.
+  Test 2: restore the full floatable path with two wavetables and `alt`.
+  1. Re-enable both rendered wavetable outputs and `alt` mode.
+  2. Try alternating control-rate updates so `X` and `Y` are calculated on separate control ticks: one control tick updates `X`, the next updates `Y`, then repeat.
+  Goal: check whether halving the per-tick `X`/`Y` control work removes the glitch even though each axis updates at half the current rate.
+- `What to test`: Sweep all `16` waves in Out1 and Out2 for both normal and alt, confirm Alt swaps to the second bank pair cleanly, listen for any weak transitions or clicks that would justify reordering the curated banks, then run the dedicated glitch investigation plan above on integrated `mtws`.
 
 ### 4. Fix the global VCA
 - `Status`: Done

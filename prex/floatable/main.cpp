@@ -10,6 +10,7 @@ int main() {
   sleep_ms(10);
   set_sys_clock_khz(200000, true);
 
-  solo_common::SoloAppBase<FloatableSoloEngine> app;
+  // Keep the double-buffered render frames out of the main stack.
+  static solo_common::SoloAppBase<FloatableSoloEngine> app;
   app.Run();
 }

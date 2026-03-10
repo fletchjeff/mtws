@@ -65,22 +65,10 @@ struct BenderControlFrame {
 struct FloatableControlFrame {
   // Oscillator phase increment in 0.32 phase units/sample.
   uint32_t phase_inc;
-  // Top-left wave index in the current 2x2 XY neighborhood.
-  uint8_t i00;
-  // Top-right wave index in the current 2x2 XY neighborhood.
-  uint8_t i10;
-  // Bottom-left wave index in the current 2x2 XY neighborhood.
-  uint8_t i01;
-  // Bottom-right wave index in the current 2x2 XY neighborhood.
-  uint8_t i11;
-  // Reserved for future anti-alias table selection.
-  uint8_t aa_level;
-  // Horizontal morph fraction in Q12 where 0 is left and 4096 is right.
-  uint16_t x_frac_q12;
-  // Vertical morph fraction in Q12 where 0 is top and 4096 is bottom.
-  uint16_t y_frac_q12;
-  // Selects bank B when true and bank A when false.
-  bool alt;
+  // Final 256-sample wavetable rendered for Out1 at control rate.
+  int16_t rendered_out1[256];
+  // Final 256-sample wavetable rendered for Out2 at control rate.
+  int16_t rendered_out2[256];
 };
 
 struct CumulusControlFrame {

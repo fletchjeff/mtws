@@ -1,12 +1,12 @@
 #include "prex/floatable/floatable_solo_engine.h"
 
-#include "prex/floatable/floatable_wavetable_1_reversed_64x256.h"
-#include "prex/floatable/floatable_wavetable_2_original_64x256.h"
-#include "prex/floatable/floatable_wavetable_3_original_64x256.h"
-#include "prex/floatable/floatable_wavetable_4_reversed_64x256.h"
+#include "prex/mtws/wavetables/floatable_bank_1_16x256.h"
+#include "prex/mtws/wavetables/floatable_bank_2_16x256.h"
+#include "prex/mtws/wavetables/floatable_bank_3_16x256.h"
+#include "prex/mtws/wavetables/floatable_bank_4_16x256.h"
 
 namespace {
-constexpr uint32_t kNumSourceWaves = 64U;
+constexpr uint32_t kNumSourceWaves = 16U;
 constexpr uint32_t kInterpolationCells = kNumSourceWaves - 1U;
 constexpr uint32_t kRenderedTableSize = 256U;
 constexpr uint32_t kRenderedTableMask = kRenderedTableSize - 1U;
@@ -40,20 +40,19 @@ void FloatableSoloEngine::Init() {
   phase_ = 0;
 }
 
-// Builds both rendered output tables at control rate from the local 64x256 bank
-// set. Normal mode uses banks 1/2, alt mode uses banks 3/4, and the bank
-// contents are arranged so alt swaps the left/right source assignment for an
-// audible routing test without changing render cost.
+// Builds both rendered output tables at control rate from the shared curated
+// 16x256 bank set. Normal mode routes banks 1/2 to Out1/Out2 and alt mode
+// routes banks 3/4 to Out1/Out2, which is the same mapping used in `mtws`.
 void FloatableSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   out.phase_inc = control.pitch_inc;
 
-  auto render_wavetable_from_axis = [&](const int16_t source_waves[64][256],
+  auto render_wavetable_from_axis = [&](const int16_t source_waves[16][256],
                                         uint32_t axis_code,
                                         int16_t rendered_wave[256]) {
     if (axis_code > 4095U) axis_code = 4095U;
 
-    // Map 0..4095 across 63 interpolation cells so the full sweep moves from
-    // wave 0 to wave 63. The endpoint special-case preserves exact access to
+    // Map 0..4095 across 15 interpolation cells so the full sweep moves from
+    // wave 0 to wave 15. The endpoint special-case preserves exact access to
     // the final wave instead of stopping one fraction short.
     uint32_t wave_pos_q12 = axis_code * kInterpolationCells;
     uint32_t wave_a = wave_pos_q12 >> 12;
@@ -69,15 +68,10 @@ void FloatableSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& cont
     }
   };
 
-  // Bank layout for this test:
-  // - bank 1 == bank 4 : reversed source
-  // - bank 2 == bank 3 : original source
-  // So flipping alt swaps the Out1/Out2 source roles while keeping the data
-  // set identical, which makes the routing change easy to hear.
   const int16_t (*out1_source)[256] =
-      control.alt ? floatable_wavetable_3_original_64x256 : floatable_wavetable_1_reversed_64x256;
+      control.alt ? floatable_bank_3_16x256 : floatable_bank_1_16x256;
   const int16_t (*out2_source)[256] =
-      control.alt ? floatable_wavetable_4_reversed_64x256 : floatable_wavetable_2_original_64x256;
+      control.alt ? floatable_bank_4_16x256 : floatable_bank_2_16x256;
 
   render_wavetable_from_axis(out1_source, control.macro_x, out.rendered_out1);
   render_wavetable_from_axis(out2_source, control.macro_y, out.rendered_out2);

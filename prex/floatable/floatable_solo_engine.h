@@ -3,9 +3,9 @@
 #include "prex/mtws/dsp/sine_lut.h"
 #include "prex/solo_common/solo_control_router.h"
 
-// FloatableSoloEngine is a minimum-viable rendered-wavetable test. Core 1 builds
-// two finished 256-sample wavetables, one for each output, and the audio loop
-// only phase-reads those completed tables.
+// FloatableSoloEngine renders two finished 256-sample output tables from the
+// shared curated bank set on core 1, then the audio loop phase-reads those
+// completed tables.
 class FloatableSoloEngine {
  public:
   // Per-block values used during audio-rate rendering.

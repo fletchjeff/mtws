@@ -1,41 +1,41 @@
 # floatable
 
 ## Goal + Sonic Intent
-Stereo wavetable oscillator with an 8x8 morph surface, bank switch in Alt mode,
-and an inverse-X companion output for width.
+Stereo wavetable oscillator with one curated wavetable lane per output and a
+bank-pair switch in Alt mode.
 
 ## Control Map
 - Main: pitch (10Hz..10kHz)
-- X: horizontal wavetable interpolation between adjacent columns (or AudioIn1 attenuator)
-- Y: vertical wavetable interpolation between adjacent rows (or AudioIn2 attenuator)
+- X: wavetable position inside the current Out1 bank (or AudioIn1 attenuator)
+- Y: wavetable position inside the current Out2 bank (or AudioIn2 attenuator)
 - Z Up: Alt bank select
 - Z Middle: Normal bank select
 - Z Down: ignored in standalone
-- Out1: forward bilinear morph output
-- Out2: inverse-X morph output over the same Y position
+- Out1: rendered output from the selected Out1 bank
+- Out2: rendered output from the selected Out2 bank
 
 ## DSP Block Diagram
-- Control: map X/Y across a non-wrapping 8x8 surface, select the 2x2 wavetable neighborhood, and store Q12 X/Y fractions
-- Audio: phase-interpolate the 4 corner waves at the current phase
-- Out1: X-lerp top and bottom rows, then Y-lerp those row results
-- Out2: reuse the same corner samples and row results with inverse X over the same Y position
+- Control: choose the active bank pair, then render one finished 256-sample table for Out1 from X and one finished 256-sample table for Out2 from Y
+- Audio: phase-interpolate each rendered 256-sample table at the current oscillator phase
+- Normal: Out1 <- bank 1, Out2 <- bank 2
+- Alt: Out1 <- bank 3, Out2 <- bank 4
 
 ## CPU-Risk Points
-- 4 in-wave sample interpolations per output sample
-- Bilinear X/Y wavetable interpolation on every audio sample
+- Rebuilding two 256-sample rendered tables every control tick
+- Shared control frame is larger because it carries both rendered tables
 - High-frequency aliasing from bright waves
 
 ## Milestone Steps
-1. Curate stronger bank content while preserving neighborhood continuity across the 8x8 surface.
-2. Re-evaluate whether inverse-X `Out2` remains the final stereo strategy once the curated banks are in place.
+1. Hardware-check the new curated bank order in both standalone and integrated builds.
+2. Reorder waves only if X or Y sweeps expose weak transitions inside a bank.
 3. Reintroduce optional anti-alias table strategy later only if the final bank set needs it.
 
 ## Hardware Test Checklist
-- Check smooth X/Y movement across the full grid, especially row boundaries.
+- Check smooth X movement across the full Out1 bank and Y movement across the full Out2 bank.
 - Confirm Alt switches bank audibly.
-- Verify stereo relation remains stable and useful.
-- Sweep X slowly and listen for any remaining `Out2` boundary clicks on strong table transitions.
+- Verify the normal pair and alt pair both have useful stereo contrast.
+- Sweep slowly through all 16 waves in each bank and listen for boundary clicks or weak order choices.
 
 ## Implementation Notes
-- Integrated `mtws` currently uses the original `64 x 512` bank A/B source tables with direct audio-rate bilinear interpolation in [floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp).
-- The standalone `floatable` target is currently a separate `4 x 64 x 256` rendered-table sandbox for bank-routing and wavetable-set experiments; see [WAVETABLE.md](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/WAVETABLE.md).
+- Integrated `mtws` and the standalone `floatable` target now share the same four curated `16 x 256` bank headers in [prex/mtws/wavetables](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables).
+- Both builds now render two finished `256`-sample output tables at control rate and only phase-read those finished tables at audio rate; see [floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp).

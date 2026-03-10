@@ -13,8 +13,15 @@ class FloatableEngine : public EngineInterface {
   void RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) override;
 
  private:
-  static constexpr uint32_t kNumWaveforms = 64;
-  static constexpr uint32_t kSamplesPerWave = 512;
+  // Q12 interpolation helper where `t_q12 = 0` returns `a` and `4096` returns `b`.
+  static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
+
+  static constexpr uint32_t kNumSourceWaves = 16U;
+  static constexpr uint32_t kInterpolationCells = kNumSourceWaves - 1U;
+  static constexpr uint32_t kRenderedTableSize = 256U;
+  static constexpr uint32_t kRenderedTableMask = kRenderedTableSize - 1U;
+  static constexpr uint32_t kRenderedTableIndexShift = 24U;
+  static constexpr uint32_t kRenderedTableFracShift = 12U;
 
   uint32_t phase_;
 };
