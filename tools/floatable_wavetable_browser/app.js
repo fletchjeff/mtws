@@ -198,30 +198,42 @@ function bindControlEvents() {
     input.addEventListener("input", handleLibraryFilterSliderInput);
   });
 
-  dom.sortSelect.addEventListener("change", (event) => {
-    state.sortKey = String(event.target.value || "name");
-    applyFiltersAndRender();
-  });
+  if (dom.sortSelect) {
+    dom.sortSelect.addEventListener("change", (event) => {
+      state.sortKey = String(event.target.value || "name");
+      applyFiltersAndRender();
+    });
+  }
 
-  dom.resetCategoryFiltersButton.addEventListener("click", () => {
-    resetCategoryFilters();
-  });
+  if (dom.resetCategoryFiltersButton) {
+    dom.resetCategoryFiltersButton.addEventListener("click", () => {
+      resetCategoryFilters();
+    });
+  }
 
-  dom.previewCandidateButton.addEventListener("click", () => {
-    void playSelectedCandidate();
-  });
+  if (dom.previewCandidateButton) {
+    dom.previewCandidateButton.addEventListener("click", () => {
+      void playSelectedCandidate();
+    });
+  }
 
-  dom.assignSelectedSlotButton.addEventListener("click", () => {
-    assignSelectedEntryToSelectedSlot();
-  });
+  if (dom.assignSelectedSlotButton) {
+    dom.assignSelectedSlotButton.addEventListener("click", () => {
+      assignSelectedEntryToSelectedSlot();
+    });
+  }
 
-  dom.assignNextSlotButton.addEventListener("click", () => {
-    assignSelectedEntryToNextOpenSlot();
-  });
+  if (dom.assignNextSlotButton) {
+    dom.assignNextSlotButton.addEventListener("click", () => {
+      assignSelectedEntryToNextOpenSlot();
+    });
+  }
 
-  dom.previewTargetSlotButton.addEventListener("click", () => {
-    void playSelectedSlot();
-  });
+  if (dom.previewTargetSlotButton) {
+    dom.previewTargetSlotButton.addEventListener("click", () => {
+      void playSelectedSlot();
+    });
+  }
 
   dom.playMorphButtons.forEach((button) => {
     button.addEventListener("click", () => {
@@ -229,25 +241,35 @@ function bindControlEvents() {
     });
   });
 
-  dom.randomTargetButton.addEventListener("click", () => {
-    assignRandomFilteredEntryToSelectedSlot();
-  });
+  if (dom.randomTargetButton) {
+    dom.randomTargetButton.addEventListener("click", () => {
+      assignRandomFilteredEntryToSelectedSlot();
+    });
+  }
 
-  dom.randomAllButton.addEventListener("click", () => {
-    fillSlotsFromFilteredEntries();
-  });
+  if (dom.randomAllButton) {
+    dom.randomAllButton.addEventListener("click", () => {
+      fillSlotsFromFilteredEntries();
+    });
+  }
 
-  dom.stopPlaybackButton.addEventListener("click", () => {
-    stopPlayback();
-  });
+  if (dom.stopPlaybackButton) {
+    dom.stopPlaybackButton.addEventListener("click", () => {
+      stopPlayback();
+    });
+  }
 
-  dom.exportJsonButton.addEventListener("click", () => {
-    void exportSelectionJson();
-  });
+  if (dom.exportJsonButton) {
+    dom.exportJsonButton.addEventListener("click", () => {
+      void exportSelectionJson();
+    });
+  }
 
-  dom.exportWavButton.addEventListener("click", () => {
-    void exportBankWav();
-  });
+  if (dom.exportWavButton) {
+    dom.exportWavButton.addEventListener("click", () => {
+      void exportBankWav();
+    });
+  }
 
   window.addEventListener("beforeunload", () => {
     stopPlayback();
@@ -316,6 +338,10 @@ function buildEntryMap() {
  * Outputs: none. The category filter list is rebuilt from manifest category metadata.
  */
 function populateCategoryFilterList() {
+  if (!dom.categoryList) {
+    return;
+  }
+
   dom.categoryList.textContent = "";
   const categories = Array.isArray(state.manifest?.categories) ? state.manifest.categories : [];
   const validCategoryNames = new Set(categories.map((category) => category.name));
@@ -369,9 +395,11 @@ function updateCategoryFilter(categoryName, isEnabled) {
  */
 function resetCategoryFilters() {
   state.categoryFilters = [];
-  dom.categoryList.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-    checkbox.checked = false;
-  });
+  if (dom.categoryList) {
+    dom.categoryList.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+  }
   updateCategorySummary();
   applyFiltersAndRender();
 }
@@ -490,7 +518,7 @@ function syncLibraryFilterSlider(groupKey) {
   const sliderGroup = dom.filterSliderGroups.get(groupKey);
   const bounds = state.filterBounds[groupKey] || config?.defaultBounds;
 
-  if (!config || !sliderGroup || !bounds) {
+  if (!config || !sliderGroup || !bounds || !sliderGroup.minInput || !sliderGroup.maxInput) {
     return;
   }
 
@@ -668,6 +696,10 @@ function sortEntries(entries, sortKey) {
       return right.brightness_score - left.brightness_score || compareText(left, right);
     }
 
+    if (sortKey === "brightness_asc") {
+      return left.brightness_score - right.brightness_score || compareText(left, right);
+    }
+
     if (sortKey === "zero_crossings_asc") {
       return left.zero_crossings - right.zero_crossings || compareText(left, right);
     }
@@ -761,6 +793,10 @@ function renderResultsSummary() {
  * Outputs: none. The library result container is rebuilt from the filtered entry list.
  */
 function renderLibraryResults(options = {}) {
+  if (!dom.libraryResults) {
+    return;
+  }
+
   const previousScrollTop = options.preserveScroll ? dom.libraryResults.scrollTop : 0;
   dom.libraryResults.textContent = "";
 
@@ -856,10 +892,20 @@ function createLibraryCard(entry) {
   const actions = document.createElement("div");
   actions.className = "card-actions";
 
+  const playButton = document.createElement("button");
+  playButton.className = "ghost-button";
+  playButton.type = "button";
+  playButton.textContent = "Play";
+  playButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectEntry(entry.id);
+    void playEntryPreview(entry.id, `Previewing ${entry.display_name}.`);
+  });
+
   const inspectButton = document.createElement("button");
   inspectButton.className = "ghost-button";
   inspectButton.type = "button";
-  inspectButton.textContent = "Inspect";
+  inspectButton.textContent = dom.candidateTitle ? "Inspect" : "Select";
   inspectButton.addEventListener("click", (event) => {
     event.stopPropagation();
     selectEntry(entry.id);
@@ -875,6 +921,7 @@ function createLibraryCard(entry) {
     assignEntryToSlot(entry.id, state.selectedSlotIndex);
   });
 
+  actions.appendChild(playButton);
   actions.appendChild(inspectButton);
   actions.appendChild(placeButton);
 
@@ -891,6 +938,10 @@ function createLibraryCard(entry) {
  * Outputs: none. The candidate panel is redrawn from the selected manifest entry.
  */
 function renderCandidatePanel() {
+  if (!dom.candidateTitle || !dom.candidateCanvas || !dom.candidateMeta || !dom.selectedSlotSummary) {
+    return;
+  }
+
   const entry = getSelectedEntry();
 
   if (!entry) {
@@ -966,6 +1017,10 @@ function createMetaCardMarkup(label, value) {
  * Outputs: none. The slot grid DOM is rebuilt from the current slot state.
  */
 function renderSlotGrid() {
+  if (!dom.slotGrid) {
+    return;
+  }
+
   dom.slotGrid.textContent = "";
 
   state.slots.forEach((slot, slotIndex) => {
@@ -1161,18 +1216,45 @@ function updateActionButtons() {
   const hasFilteredEntries = state.filteredEntries.length > 0;
   const filledSlotCount = getFilledSlotCount();
 
-  dom.previewCandidateButton.disabled = !hasSelectedEntry;
-  dom.assignSelectedSlotButton.disabled = !hasSelectedEntry;
-  dom.assignNextSlotButton.disabled = !hasSelectedEntry;
-  dom.previewTargetSlotButton.disabled = !hasTargetSlot;
+  if (dom.previewCandidateButton) {
+    dom.previewCandidateButton.disabled = !hasSelectedEntry;
+  }
+
+  if (dom.assignSelectedSlotButton) {
+    dom.assignSelectedSlotButton.disabled = !hasSelectedEntry;
+  }
+
+  if (dom.assignNextSlotButton) {
+    dom.assignNextSlotButton.disabled = !hasSelectedEntry;
+  }
+
+  if (dom.previewTargetSlotButton) {
+    dom.previewTargetSlotButton.disabled = !hasTargetSlot;
+  }
+
   dom.playMorphButtons.forEach((button) => {
     button.disabled = filledSlotCount < 2;
   });
-  dom.randomAllButton.disabled = !hasFilteredEntries;
-  dom.randomTargetButton.disabled = !hasFilteredEntries;
-  dom.stopPlaybackButton.disabled = !state.activeSource;
-  dom.exportJsonButton.disabled = filledSlotCount === 0;
-  dom.exportWavButton.disabled = filledSlotCount === 0;
+
+  if (dom.randomAllButton) {
+    dom.randomAllButton.disabled = !hasFilteredEntries;
+  }
+
+  if (dom.randomTargetButton) {
+    dom.randomTargetButton.disabled = !hasFilteredEntries;
+  }
+
+  if (dom.stopPlaybackButton) {
+    dom.stopPlaybackButton.disabled = !state.activeSource;
+  }
+
+  if (dom.exportJsonButton) {
+    dom.exportJsonButton.disabled = filledSlotCount === 0;
+  }
+
+  if (dom.exportWavButton) {
+    dom.exportWavButton.disabled = filledSlotCount === 0;
+  }
 }
 
 /**
@@ -1518,6 +1600,24 @@ async function playSelectedCandidate() {
     return;
   }
 
+  await playEntryPreview(
+    entry.id,
+    `Previewing candidate ${entry.display_name} at ${formatInteger(getPreviewFrequencyHz())} Hz.`,
+  );
+}
+
+/**
+ * Play one manifest entry directly from the library or current selection at the active audition pitch.
+ * Inputs: entryId - manifest ID for the wave to preview, statusMessage - optional UI message shown after playback starts.
+ * Outputs: Promise<void>. Audio playback begins when the requested entry is available.
+ */
+async function playEntryPreview(entryId, statusMessage = null) {
+  const entry = getEntryById(entryId);
+  if (!entry) {
+    setStatusMessage("Could not preview that wave because it is not in the manifest.");
+    return;
+  }
+
   const cycle = await ensureEntryCycleLoaded(entry.id);
   const audioContext = await ensureAudioContext();
   const buffer = renderToneBuffer(
@@ -1528,7 +1628,7 @@ async function playSelectedCandidate() {
   );
 
   playMonoBuffer(buffer, audioContext.sampleRate);
-  setStatusMessage(`Previewing candidate ${entry.display_name} at ${formatInteger(getPreviewFrequencyHz())} Hz.`);
+  setStatusMessage(statusMessage || `Previewing ${entry.display_name} at ${formatInteger(getPreviewFrequencyHz())} Hz.`);
 }
 
 /**
@@ -1577,16 +1677,17 @@ async function playMorphSweep() {
   );
 
   const audioContext = await ensureAudioContext();
+  const morphDurationSeconds = Math.max(1, filledSlots.length);
   const morphBuffer = renderMorphBuffer(
     cycles,
     getPreviewFrequencyHz(),
-    getMorphDurationSeconds(),
+    morphDurationSeconds,
     audioContext.sampleRate,
   );
 
   playMonoBuffer(morphBuffer, audioContext.sampleRate);
   setStatusMessage(
-    `Playing a ${formatDecimal(getMorphDurationSeconds())}-second morph sweep across ${formatInteger(filledSlots.length)} filled slots.`,
+    `Playing a ${formatDecimal(morphDurationSeconds)}-second morph sweep across ${formatInteger(filledSlots.length)} filled slots.`,
   );
 }
 
@@ -2402,6 +2503,10 @@ function createMetricPill(label) {
  * Outputs: number in hertz for candidate, slot, and morph audition playback.
  */
 function getPreviewFrequencyHz() {
+  if (!dom.previewPitchInput) {
+    return DEFAULT_PREVIEW_FREQUENCY_HZ;
+  }
+
   const value = Number(dom.previewPitchInput.value);
   if (!Number.isFinite(value) || value <= 0) {
     return DEFAULT_PREVIEW_FREQUENCY_HZ;
@@ -2415,6 +2520,10 @@ function getPreviewFrequencyHz() {
  * Outputs: number in seconds for morph sweep audition playback.
  */
 function getMorphDurationSeconds() {
+  if (!dom.morphDurationInput) {
+    return DEFAULT_MORPH_DURATION_SECONDS;
+  }
+
   const value = Number(dom.morphDurationInput.value);
   if (!Number.isFinite(value) || value <= 0) {
     return DEFAULT_MORPH_DURATION_SECONDS;
