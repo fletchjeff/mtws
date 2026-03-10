@@ -144,12 +144,8 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
     y_local = ApplyU12Attenuation(MapBipolarFiveVoltInputToU12(ui.audio2), ui.knob_y);
   }
 
-  uint32_t macro_x = uint32_t(x_local) + (uint32_t(midi.cc1) << 5);
-  uint32_t macro_y = uint32_t(y_local) + (uint32_t(midi.cc74) << 5);
-  if (macro_x > 4095U) macro_x = 4095U;
-  if (macro_y > 4095U) macro_y = 4095U;
-  out.macro_x = uint16_t(macro_x);
-  out.macro_y = uint16_t(macro_y);
+  out.macro_x = x_local;
+  out.macro_y = y_local;
 
   out.mode_alt = ui.pulse1_connected ? ui.pulse1_high : ui.panel_alt_latched;
 

@@ -24,6 +24,13 @@ class FloatableEngine : public EngineInterface {
   static constexpr uint32_t kRenderedTableFracShift = 12U;
 
   uint32_t phase_;
+  // Cached 256-point render targets copied into each published control frame.
+  // These let the control core update X and Y on alternating ticks without
+  // leaving one output table uninitialized in the double-buffer handoff.
+  int16_t cached_rendered_out1_[kRenderedTableSize];
+  int16_t cached_rendered_out2_[kRenderedTableSize];
+  bool caches_primed_;
+  bool render_out1_on_next_tick_;
 };
 
 }  // namespace mtws

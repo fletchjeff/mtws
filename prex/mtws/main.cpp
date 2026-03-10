@@ -15,7 +15,7 @@ namespace mtws {
 
 class MTWSApp : public ComputerCard {
  public:
-  static constexpr uint32_t kControlDivisor = 16;
+  static constexpr uint32_t kControlDivisor = 48;
   static constexpr uint32_t kControlPeriodUs = (kControlDivisor * 1000000U) / 48000U;
   static constexpr uint8_t kSwitchDebounceTicks = 3;
   static constexpr uint32_t kNoteFlashOffSamples = 960;  // ~20ms
@@ -64,8 +64,6 @@ class MTWSApp : public ComputerCard {
     init_midi.note_active = false;
     init_midi.current_note = 60;
     init_midi.last_note = 60;
-    init_midi.cc1 = 0;
-    init_midi.cc74 = 0;
     init_midi.note_on_counter = 0;
 
     GlobalControlFrame init_global = ControlRouter::BuildGlobalFrame(init_ui, init_midi);

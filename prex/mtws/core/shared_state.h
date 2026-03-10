@@ -29,8 +29,6 @@ struct MidiState {
   bool note_active;
   uint8_t current_note;
   uint8_t last_note;
-  uint8_t cc1;
-  uint8_t cc74;
   uint32_t note_on_counter;
 };
 

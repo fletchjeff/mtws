@@ -58,16 +58,25 @@ void RenderBankFromAxis(const int16_t source_waves[kNumSourceWaves][kRenderedTab
 }
 }  // namespace
 
-// Initializes the oscillator with a cleared shared phase accumulator.
-FloatableEngine::FloatableEngine() : phase_(0) {}
+// Initializes the oscillator with a cleared shared phase accumulator and blank
+// cached rendered tables used by the alternating control-rate renderer.
+FloatableEngine::FloatableEngine()
+    : phase_(0), caches_primed_(false), render_out1_on_next_tick_(true) {
+  for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
+    cached_rendered_out1_[sample_index] = 0;
+    cached_rendered_out2_[sample_index] = 0;
+  }
+}
 
 void FloatableEngine::OnSelected() {
   // Keep phase continuity for smooth slot changes.
 }
 
-// Copies pitch state and renders the two active 16x256 tables for the current
-// control frame. Normal mode routes banks 1/2 to Out1/Out2 and alt mode routes
-// banks 3/4 to Out1/Out2, matching the standalone floatable build.
+// Copies pitch state and updates one rendered table per control tick. Out1 and
+// Out2 table renders are alternated so each axis is recomputed every other
+// control frame, which reduces core-1 interpolation workload. Both cached
+// tables are then copied into the published control frame so the audio core
+// always receives valid Out1 and Out2 tables.
 void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
   frame.floatable.phase_inc = global.pitch_inc;
 
@@ -76,8 +85,23 @@ void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineContro
   const int16_t (*out2_source)[kRenderedTableSize] =
       global.mode_alt ? floatable_bank_4_16x256 : floatable_bank_2_16x256;
 
-  RenderBankFromAxis(out1_source, global.macro_x, frame.floatable.rendered_out1);
-  RenderBankFromAxis(out2_source, global.macro_y, frame.floatable.rendered_out2);
+  if (!caches_primed_) {
+    RenderBankFromAxis(out1_source, global.macro_x, cached_rendered_out1_);
+    RenderBankFromAxis(out2_source, global.macro_y, cached_rendered_out2_);
+    caches_primed_ = true;
+    render_out1_on_next_tick_ = true;
+  } else if (render_out1_on_next_tick_) {
+    RenderBankFromAxis(out1_source, global.macro_x, cached_rendered_out1_);
+    render_out1_on_next_tick_ = false;
+  } else {
+    RenderBankFromAxis(out2_source, global.macro_y, cached_rendered_out2_);
+    render_out1_on_next_tick_ = true;
+  }
+
+  for (uint32_t sample_index = 0; sample_index < kRenderedTableSize; ++sample_index) {
+    frame.floatable.rendered_out1[sample_index] = cached_rendered_out1_[sample_index];
+    frame.floatable.rendered_out2[sample_index] = cached_rendered_out2_[sample_index];
+  }
 }
 
 // Interpolates between `a` and `b` using a Q12 fraction. `4096` is used instead

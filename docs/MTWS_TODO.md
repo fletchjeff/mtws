@@ -103,9 +103,7 @@ after each hardware test loop so pending work stays visible.
         - Audio2: Engine out 2
     - Midi: 
         - Channel : 1
-        - CC:
-            10 : maps to X 
-            74 : maps to Y
-            11 : Sends CV2 out
+        - Note on/off + note pitch are active
+        - CC X/Y mapping is disabled in current build
 
 ### 12. Maybe add Reese bass to sawsome on alt for pulse width
