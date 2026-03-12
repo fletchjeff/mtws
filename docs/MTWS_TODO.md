@@ -109,3 +109,9 @@ after each hardware test loop so pending work stays visible.
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp), [prex/mtws/core/midi_worker.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/core/midi_worker.cpp)
 - `Notes`: Pulse2 out is reserved for MIDI clock instead of the older sub-out idea. Leave it unimplemented in the current pass and add clock generation later.
 - `What to test`: Verify clock pulse rate, polarity, and start/stop behavior once MIDI clock output is implemented.
+
+### 14. Try reducing `sawsome` from 7 waves to 5
+- `Status`: Open
+- `Scope`: [prex/mtws/engines/sawsome_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/sawsome_engine.cpp), [prex/sawsome/sawsome_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/sawsome/sawsome_solo_engine.cpp)
+- `Notes`: Check whether dropping `sawsome` from `7` waves/voices to `5` buys enough audio headroom to avoid the remaining glitch risk under heavier control or MIDI activity. Keep the character as close as possible to the current spread and level behavior if this is tried.
+- `What to test`: Compare `7` vs `5` waves for CPU stability, glitch resistance, stereo spread, loudness balance, and tone in both normal and alt modes.
