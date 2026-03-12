@@ -8,6 +8,7 @@ MIDIWorker::MIDIWorker() {
   state_.note_active = false;
   state_.current_note = 60;
   state_.last_note = 60;
+  state_.cc74_value = 0;
   state_.note_on_counter = 0;
   running_status_ = 0;
   data_bytes_[0] = 0;
@@ -49,6 +50,14 @@ void MIDIWorker::HandleChannelMessage(uint8_t status, uint8_t data1, uint8_t dat
       uint8_t note = data1 & 0x7FU;
       if (state_.note_active && note == state_.current_note) {
         state_.note_active = false;
+      }
+      break;
+    }
+
+    case 0xB0: {  // control change
+      uint8_t controller = data1 & 0x7FU;
+      if (controller == 74U) {
+        state_.cc74_value = data2 & 0x7FU;
       }
       break;
     }

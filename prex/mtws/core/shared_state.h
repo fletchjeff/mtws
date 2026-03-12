@@ -29,6 +29,7 @@ struct MidiState {
   bool note_active;
   uint8_t current_note;
   uint8_t last_note;
+  uint8_t cc74_value;
   uint32_t note_on_counter;
 };
 
@@ -41,6 +42,7 @@ struct GlobalControlFrame {
   uint16_t vca_gain_q12;
   uint8_t current_midi_note;
   uint8_t last_midi_note;
+  uint8_t midi_cc74_value;
   bool midi_note_active;
   uint32_t note_on_counter;
 };

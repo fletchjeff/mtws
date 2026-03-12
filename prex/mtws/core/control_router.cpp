@@ -158,6 +158,7 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   out.midi_note_active = midi.note_active;
   out.current_midi_note = midi.current_note;
   out.last_midi_note = midi.last_note;
+  out.midi_cc74_value = midi.cc74_value;
   out.note_on_counter = midi.note_on_counter;
 
   return out;

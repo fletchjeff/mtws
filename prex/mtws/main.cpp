@@ -13,6 +13,17 @@
 
 namespace mtws {
 
+namespace {
+
+// Maps MIDI CC74 from 0..127 into the ComputerCard bipolar CV code range.
+// The endpoints intentionally use the full raw code span so the output is
+// approximately -6 V at startup and +6 V at the top of the CC range.
+inline int16_t MapCC74ToCV2Code(uint8_t cc74_value) {
+  return int16_t(((uint32_t(cc74_value) * 4095U) + 63U) / 127U) - 2048;
+}
+
+}  // namespace
+
 class MTWSApp : public ComputerCard {
  public:
   static constexpr uint32_t kControlDivisor = 48;
@@ -30,15 +41,19 @@ class MTWSApp : public ComputerCard {
         switch_candidate_(Middle),
         switch_stable_(Middle),
         switch_stable_count_(0),
+        pulse2_high_prev_(false),
         panel_alt_latched_(false),
         selected_slot_(5),
         seen_note_on_counter_(0),
         note_flash_samples_remaining_(0),
         last_cv_note_sent_(255),
+        last_cc74_sent_(0),
+        last_pulse1_gate_sent_(2),
         core1_started_(false) {
     instance_ = this;
 
     EnableNormalisationProbe();
+    CVOut2(MapCC74ToCV2Code(0));
     registry_.Init();
     registry_.Get(selected_slot_)->OnSelected();
 
@@ -64,6 +79,7 @@ class MTWSApp : public ComputerCard {
     init_midi.note_active = false;
     init_midi.current_note = 60;
     init_midi.last_note = 60;
+    init_midi.cc74_value = 0;
     init_midi.note_on_counter = 0;
 
     GlobalControlFrame init_global = ControlRouter::BuildGlobalFrame(init_ui, init_midi);
@@ -105,6 +121,13 @@ class MTWSApp : public ComputerCard {
     }
   }
 
+  // Advances to the next engine slot and lets the new engine refresh any
+  // per-selection state before the next render call.
+  inline void AdvanceSelectedSlot() {
+    selected_slot_ = uint8_t((selected_slot_ + 1U) % kNumOscillatorSlots);
+    registry_.Get(selected_slot_)->OnSelected();
+  }
+
   inline void CaptureUISnapshotAndHandleSwitching() {
     Switch prev_stable = switch_stable_;
     Switch sw = SwitchVal();
@@ -124,6 +147,10 @@ class MTWSApp : public ComputerCard {
     }
     sw = switch_stable_;
 
+    const bool pulse2_high = Connected(Input::Pulse2) && PulseIn2();
+    const bool pulse2_rising = pulse2_high && !pulse2_high_prev_;
+    pulse2_high_prev_ = pulse2_high;
+
     if (sw == Up) {
       panel_alt_latched_ = true;
     } else if (sw == Middle) {
@@ -131,12 +158,11 @@ class MTWSApp : public ComputerCard {
     }
 
     bool down_edge = (sw == Down) && (prev_stable != Down);
-    if (down_edge) {
-      selected_slot_ = uint8_t((selected_slot_ + 1U) % kNumOscillatorSlots);
-      // Slot changes are now hard cuts. This removes the extra render of the
+    if (down_edge || pulse2_rising) {
+      // Slot changes are hard cuts. This removes the extra render of the
       // previous engine from the audio callback so switching costs no more than
       // normal steady-state rendering.
-      registry_.Get(selected_slot_)->OnSelected();
+      AdvanceSelectedSlot();
     }
 
     UISnapshot ui{};
@@ -179,6 +205,26 @@ class MTWSApp : public ComputerCard {
     }
   }
 
+  // Applies MIDI-driven panel outputs at control rate so the audio callback
+  // only renders engine audio and avoids extra per-sample GPIO/CV work.
+  inline void UpdateMIDIOutputs(const GlobalControlFrame& global) {
+    if (global.last_midi_note != last_cv_note_sent_) {
+      CVOut1MIDINote(global.last_midi_note);
+      last_cv_note_sent_ = global.last_midi_note;
+    }
+
+    if (global.midi_cc74_value != last_cc74_sent_) {
+      CVOut2(MapCC74ToCV2Code(global.midi_cc74_value));
+      last_cc74_sent_ = global.midi_cc74_value;
+    }
+
+    const uint8_t pulse1_gate = global.midi_note_active ? 1U : 0U;
+    if (pulse1_gate != last_pulse1_gate_sent_) {
+      PulseOut1(global.midi_note_active);
+      last_pulse1_gate_sent_ = pulse1_gate;
+    }
+  }
+
   virtual void ProcessSample() override {
     if (!core1_started_) {
       core1_started_ = true;
@@ -191,7 +237,9 @@ class MTWSApp : public ComputerCard {
 
       uint32_t read_index = published_frame_index_;
       __dmb();
-      UpdateSlotLEDs(control_frames_[read_index]);
+      const ControlFrame& frame = control_frames_[read_index];
+      UpdateSlotLEDs(frame);
+      UpdateMIDIOutputs(frame.global);
     }
 
     if (note_flash_samples_remaining_ > 0) {
@@ -219,11 +267,6 @@ class MTWSApp : public ComputerCard {
 
     AudioOut1(int16_t(out1));
     AudioOut2(int16_t(out2));
-
-    if (frame.global.last_midi_note != last_cv_note_sent_) {
-      CVOut1MIDINote(frame.global.last_midi_note);
-      last_cv_note_sent_ = frame.global.last_midi_note;
-    }
   }
 
  private:
@@ -242,12 +285,15 @@ class MTWSApp : public ComputerCard {
   Switch switch_candidate_;
   Switch switch_stable_;
   uint8_t switch_stable_count_;
+  bool pulse2_high_prev_;
   bool panel_alt_latched_;
   uint8_t selected_slot_;
 
   uint32_t seen_note_on_counter_;
   int note_flash_samples_remaining_;
   uint8_t last_cv_note_sent_;
+  uint8_t last_cc74_sent_;
+  uint8_t last_pulse1_gate_sent_;
 
   bool core1_started_;
 };
