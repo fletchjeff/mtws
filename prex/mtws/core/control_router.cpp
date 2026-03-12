@@ -129,7 +129,10 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   uint16_t pitch_code = ClampU12(pitch_local);
 
   uint32_t base_inc = BasePhaseIncrementFromPitchCode(pitch_code);
-  int semitone = midi.note_active ? (int(midi.current_note) - 60) : 0;
+  // Hold the most recent MIDI note through note-off so internal pitch matches
+  // the CV1 note output during envelope release instead of snapping back to the
+  // panel tuning as soon as the gate drops.
+  int semitone = int(midi.last_note) - 60;
   out.pitch_inc = ApplySemitoneToPhaseInc(base_inc, semitone);
   if (out.pitch_inc < kBasePhaseInc10Hz) out.pitch_inc = kBasePhaseInc10Hz;
   if (out.pitch_inc > kMaxPhaseInc10kHz) out.pitch_inc = kMaxPhaseInc10kHz;
