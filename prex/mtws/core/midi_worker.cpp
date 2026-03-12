@@ -4,25 +4,65 @@
 
 namespace mtws {
 
+namespace {
+
+constexpr uint32_t kMaxMIDIPollBytes = 64U;
+
+// Returns the byte length of one short MIDI message including the status byte.
+// SysEx and unknown system messages fall back to 1 so the caller can skip
+// forward until the next status byte without building a full general parser.
+inline uint32_t MIDIMessageLength(uint8_t status) {
+  switch (status & 0xF0U) {
+    case 0x80:
+    case 0x90:
+    case 0xA0:
+    case 0xB0:
+    case 0xE0:
+      return 3U;
+
+    case 0xC0:
+    case 0xD0:
+      return 2U;
+
+    case 0xF0:
+      switch (status) {
+        case 0xF1:
+        case 0xF3:
+          return 2U;
+
+        case 0xF2:
+          return 3U;
+
+        default:
+          return 1U;
+      }
+
+    default:
+      return 1U;
+  }
+}
+
+}  // namespace
+
 MIDIWorker::MIDIWorker() {
   state_.note_active = false;
   state_.current_note = 60;
   state_.last_note = 60;
   state_.cc74_value = 0;
   state_.note_on_counter = 0;
-  running_status_ = 0;
-  data_bytes_[0] = 0;
-  data_bytes_[1] = 0;
-  data_count_ = 0;
-  needed_data_bytes_ = 0;
-  in_sysex_ = false;
+  pending_bytes_[0] = 0;
+  pending_bytes_[1] = 0;
+  pending_bytes_[2] = 0;
+  pending_count_ = 0;
 }
 
 void MIDIWorker::Init() {
   tusb_init();
 }
 
-void MIDIWorker::HandleChannelMessage(uint8_t status, uint8_t data1, uint8_t data2) {
+void MIDIWorker::HandleShortMessage(uint8_t status, uint8_t data1, uint8_t data2, MidiState& next_state) const {
+  if ((status & 0x80U) == 0U) return;
+
   uint8_t status_nibble = status & 0xF0U;
   uint8_t channel = status & 0x0FU;
 
@@ -34,22 +74,22 @@ void MIDIWorker::HandleChannelMessage(uint8_t status, uint8_t data1, uint8_t dat
       uint8_t note = data1 & 0x7FU;
       uint8_t velocity = data2 & 0x7FU;
       if (velocity == 0U) {
-        if (state_.note_active && note == state_.current_note) {
-          state_.note_active = false;
+        if (next_state.note_active && note == next_state.current_note) {
+          next_state.note_active = false;
         }
       } else {
-        state_.note_active = true;
-        state_.current_note = note;
-        state_.last_note = note;
-        state_.note_on_counter++;
+        next_state.note_active = true;
+        next_state.current_note = note;
+        next_state.last_note = note;
+        next_state.note_on_counter++;
       }
       break;
     }
 
     case 0x80: {  // note off
       uint8_t note = data1 & 0x7FU;
-      if (state_.note_active && note == state_.current_note) {
-        state_.note_active = false;
+      if (next_state.note_active && note == next_state.current_note) {
+        next_state.note_active = false;
       }
       break;
     }
@@ -57,7 +97,7 @@ void MIDIWorker::HandleChannelMessage(uint8_t status, uint8_t data1, uint8_t dat
     case 0xB0: {  // control change
       uint8_t controller = data1 & 0x7FU;
       if (controller == 74U) {
-        state_.cc74_value = data2 & 0x7FU;
+        next_state.cc74_value = data2 & 0x7FU;
       }
       break;
     }
@@ -67,68 +107,51 @@ void MIDIWorker::HandleChannelMessage(uint8_t status, uint8_t data1, uint8_t dat
   }
 }
 
-void MIDIWorker::ConsumeMIDIByte(uint8_t byte) {
-  if (byte & 0x80U) {
-    // Realtime message bytes can appear anywhere; ignore without resetting parser state.
-    if (byte >= 0xF8U) return;
-
-    if (byte == 0xF0U) {
-      in_sysex_ = true;
-      running_status_ = 0;
-      data_count_ = 0;
-      needed_data_bytes_ = 0;
-      return;
+uint32_t MIDIWorker::ConsumeMIDIBytes(const uint8_t* bytes, uint32_t count, MidiState& next_state) const {
+  uint32_t index = 0;
+  while (index < count) {
+    uint8_t status = bytes[index];
+    if ((status & 0x80U) == 0U) {
+      ++index;
+      continue;
     }
 
-    if (byte == 0xF7U) {
-      in_sysex_ = false;
-      data_count_ = 0;
-      needed_data_bytes_ = 0;
-      return;
+    const uint32_t message_length = MIDIMessageLength(status);
+    if (index + message_length > count) {
+      break;
     }
 
-    if (in_sysex_) return;
-
-    // Ignore non-channel status bytes and clear running status.
-    if (byte >= 0xF0U) {
-      running_status_ = 0;
-      data_count_ = 0;
-      needed_data_bytes_ = 0;
-      return;
-    }
-
-    running_status_ = byte;
-    data_count_ = 0;
-    uint8_t status_nibble = byte & 0xF0U;
-    needed_data_bytes_ = (status_nibble == 0xC0U || status_nibble == 0xD0U) ? 1U : 2U;
-    return;
+    const uint8_t data1 = (message_length > 1U) ? bytes[index + 1U] : 0U;
+    const uint8_t data2 = (message_length > 2U) ? bytes[index + 2U] : 0U;
+    HandleShortMessage(status, data1, data2, next_state);
+    index += message_length;
   }
-
-  if (in_sysex_ || running_status_ == 0U || needed_data_bytes_ == 0U) return;
-
-  if (data_count_ < 2U) {
-    data_bytes_[data_count_++] = byte & 0x7FU;
-  }
-
-  if (data_count_ >= needed_data_bytes_) {
-    if (needed_data_bytes_ == 2U) {
-      HandleChannelMessage(running_status_, data_bytes_[0], data_bytes_[1]);
-    }
-    // Keep running status; parse next message data bytes.
-    data_count_ = 0;
-  }
+  return index;
 }
 
 void MIDIWorker::Poll() {
   tud_task();
 
-  uint8_t buffer[64];
-  while (tud_midi_available()) {
-    uint32_t bytes_read = tud_midi_stream_read(buffer, sizeof(buffer));
-    for (uint32_t i = 0; i < bytes_read; ++i) {
-      ConsumeMIDIByte(buffer[i]);
-    }
+  if (tud_midi_available() == 0U) return;
+
+  MidiState next_state = state_;
+  uint8_t buffer[kMaxMIDIPollBytes + 3U];
+  uint32_t byte_count = pending_count_;
+  for (uint32_t i = 0; i < pending_count_; ++i) {
+    buffer[i] = pending_bytes_[i];
   }
+
+  // Read at most one chunk per control tick so MIDI traffic cannot stretch the
+  // control loop indefinitely. This still batches multiple short messages.
+  const uint32_t bytes_read = tud_midi_stream_read(buffer + byte_count, kMaxMIDIPollBytes);
+  byte_count += bytes_read;
+
+  const uint32_t consumed = ConsumeMIDIBytes(buffer, byte_count, next_state);
+  pending_count_ = uint8_t(byte_count - consumed);
+  for (uint32_t i = 0; i < pending_count_; ++i) {
+    pending_bytes_[i] = buffer[consumed + i];
+  }
+  state_ = next_state;
 }
 
 MidiState MIDIWorker::Snapshot() const {
