@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/sawsome_engine.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -120,13 +121,13 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   }
 }
 
-int32_t SawsomeEngine::Clamp12(int32_t v) {
+int32_t __not_in_flash_func(SawsomeEngine::Clamp12)(int32_t v) {
   if (v > 2047) return 2047;
   if (v < -2048) return -2048;
   return v;
 }
 
-int32_t SawsomeEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
+int32_t __not_in_flash_func(SawsomeEngine::PolyBlepSawQ12)(uint32_t phase, uint32_t phase_inc) {
   int32_t saw = int32_t((phase >> 20) & 0x0FFFU) - 2048;
   if (phase_inc == 0) return saw;
 
@@ -148,14 +149,14 @@ int32_t SawsomeEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
   return Clamp12(saw);
 }
 
-int32_t SawsomeEngine::PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc) {
+int32_t __not_in_flash_func(SawsomeEngine::PolyBlepTriangleQ12)(int voice_index, uint32_t phase, uint32_t phase_inc) {
   int32_t saw = PolyBlepSawQ12(phase, phase_inc);
   tri_state_[voice_index] += saw;
   tri_state_[voice_index] -= tri_state_[voice_index] >> 11;
   return Clamp12(tri_state_[voice_index] >> 5);
 }
 
-void SawsomeEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(SawsomeEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const SawsomeControlFrame& in = frame.sawsome;
 
   int32_t sum_l = 0;

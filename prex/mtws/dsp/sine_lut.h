@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include "pico.h"
 
 namespace mtws {
 
@@ -16,7 +17,7 @@ class SineLUT {
     }
   }
 
-  inline int32_t LookupLinear(uint32_t phase) const {
+  inline int32_t __not_in_flash_func(LookupLinear)(uint32_t phase) const {
     uint32_t index = phase >> 23;
     int32_t frac = int32_t((phase & 0x7FFFFFU) >> 7);  // Q16
     int32_t s1 = table_[index];

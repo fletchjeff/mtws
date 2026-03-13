@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/losenge_engine.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -85,7 +86,7 @@ void LosengeEngine::OnSelected() {
 }
 
 // Clamps the sample to the signed 12-bit ComputerCard output range.
-int32_t LosengeEngine::Clamp12(int32_t v) {
+int32_t __not_in_flash_func(LosengeEngine::Clamp12)(int32_t v) {
   if (v > 2047) return 2047;
   if (v < -2048) return -2048;
   return v;
@@ -109,13 +110,13 @@ uint32_t LosengeEngine::ApplyShiftQ12(uint16_t hz, uint16_t shift_q12) {
 }
 
 // Generates a bipolar square in the signed 12-bit board domain.
-int32_t LosengeEngine::SquareQ12(uint32_t phase) {
+int32_t __not_in_flash_func(LosengeEngine::SquareQ12)(uint32_t phase) {
   return (phase < 0x80000000U) ? 2047 : -2048;
 }
 
 // Mixes the three formant oscillators, applies the glottal envelope, and scales
 // the result by the output gain. The envelope and voice gain are both Q12.
-int32_t LosengeEngine::MixFormantsQ12(int32_t f1,
+int32_t __not_in_flash_func(LosengeEngine::MixFormantsQ12)(int32_t f1,
                                       int32_t f2,
                                       int32_t f3,
                                       const uint16_t (&amplitudes_q12)[3],
@@ -164,7 +165,7 @@ void LosengeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
 // Renders one sample of the vocal oscillator with separate vowel positions per
 // output. The carrier phase defines pitch and resets both formant banks at each
 // glottal pulse, which is the main behavior borrowed from Braids/Twists VOWL.
-void LosengeEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(LosengeEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const LosengeControlFrame& in = frame.losenge;
   const uint32_t previous_phase = phase_;
   phase_ += in.phase_increment;

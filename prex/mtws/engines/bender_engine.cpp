@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/bender_engine.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -69,7 +70,7 @@ void BenderEngine::ControlTick(const GlobalControlFrame& global, EngineControlFr
   out.alt = global.mode_alt;
 }
 
-int32_t BenderEngine::Clamp12(int32_t v) {
+int32_t __not_in_flash_func(BenderEngine::Clamp12)(int32_t v) {
   if (v > 2047) return 2047;
   if (v < -2048) return -2048;
   return v;
@@ -77,7 +78,7 @@ int32_t BenderEngine::Clamp12(int32_t v) {
 
 // Utility-Pair fold transfer function. Values within +/-2048 pass through,
 // while larger magnitudes are reflected every 4096 samples.
-int32_t BenderEngine::FoldFunction(int32_t x) {
+int32_t __not_in_flash_func(BenderEngine::FoldFunction)(int32_t x) {
   int32_t period = 8192;
   x = ((x + 2048) % period + period) % period;
 
@@ -90,7 +91,7 @@ int32_t BenderEngine::FoldFunction(int32_t x) {
 // Antiderivative of FoldFunction used for the derivative antialiasing step.
 // This follows the Utility-Pair implementation directly so the folded sine uses
 // the same transfer curve and the same antialiasing strategy.
-int32_t BenderEngine::FoldIntegral(int32_t x) {
+int32_t __not_in_flash_func(BenderEngine::FoldIntegral)(int32_t x) {
   int32_t period = 8192;
   x = ((x + 2048) % period + period) % period;
   int32_t x2 = x * 2;
@@ -103,7 +104,7 @@ int32_t BenderEngine::FoldIntegral(int32_t x) {
 // Differentiates successive fold integrals to suppress aliasing at fold corners.
 // If the input sample did not move, the exact fold function is cheaper and
 // produces the same result.
-int32_t BenderEngine::AntiAliasedFold(int32_t x, int32_t& last_integral, int32_t& last_input) {
+int32_t __not_in_flash_func(BenderEngine::AntiAliasedFold)(int32_t x, int32_t& last_integral, int32_t& last_input) {
   int32_t ret = 0;
   if (x == last_input) {
     ret = FoldFunction(x);
@@ -118,7 +119,7 @@ int32_t BenderEngine::AntiAliasedFold(int32_t x, int32_t& last_integral, int32_t
 
 // Utility-Pair bitcrusher transfer. `amount` is the quantizer step size in the
 // signed 12-bit sample domain, so larger values produce fewer output levels.
-int32_t BenderEngine::CrushFunction(int32_t x, int32_t amount) {
+int32_t __not_in_flash_func(BenderEngine::CrushFunction)(int32_t x, int32_t amount) {
   if (amount < 1) amount = 1;
   x += -2047 + (amount >> 1);
   x = x - (((x % amount) + amount) % amount) + 2047;
@@ -128,7 +129,7 @@ int32_t BenderEngine::CrushFunction(int32_t x, int32_t amount) {
 }
 
 // Linear interpolation where `t_q12 = 0` returns dry and `4096` returns wet.
-int32_t BenderEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
+int32_t __not_in_flash_func(BenderEngine::LerpQ12)(int32_t a, int32_t b, uint32_t t_q12) {
   if (t_q12 > 4096U) t_q12 = 4096U;
   return a + int32_t((int64_t(b - a) * int32_t(t_q12)) >> 12);
 }
@@ -140,7 +141,7 @@ int32_t BenderEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
 // Alt mode reorders the nonlinear stages:
 // - Out1: fold -> crusher
 // - Out2: crusher -> fold
-void BenderEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(BenderEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const BenderControlFrame& in = frame.bender;
 
   if (in.alt != last_alt_) {

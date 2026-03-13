@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/cumulus_engine.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -173,7 +174,7 @@ void CumulusEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   out.mix_norm_q12 = int32_t(safe_mix_norm_q12);
 }
 
-void CumulusEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(CumulusEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const CumulusControlFrame& in = frame.cumulus;
 
   int32_t sum_odd = 0;

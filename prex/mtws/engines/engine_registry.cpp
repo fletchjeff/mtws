@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/engine_registry.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -24,7 +25,7 @@ void EngineRegistry::Init() {
   }
 }
 
-EngineInterface* EngineRegistry::Get(uint8_t slot) {
+EngineInterface* __not_in_flash_func(EngineRegistry::Get)(uint8_t slot) {
   if (slot >= kNumOscillatorSlots) {
     slot = 0;
   }

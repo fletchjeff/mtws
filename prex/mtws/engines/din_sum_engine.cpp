@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/din_sum_engine.h"
+#include "pico.h"
 
 namespace mtws {
 
@@ -85,7 +86,7 @@ void DinSumEngine::OnSelected() {
 // Clamps any intermediate sample to the signed 12-bit ComputerCard audio range.
 // Input: unconstrained signed sample.
 // Output: sample limited to -2048..2047.
-int32_t DinSumEngine::Clamp12(int32_t v) {
+int32_t __not_in_flash_func(DinSumEngine::Clamp12)(int32_t v) {
   if (v > 2047) return 2047;
   if (v < -2048) return -2048;
   return v;
@@ -94,7 +95,7 @@ int32_t DinSumEngine::Clamp12(int32_t v) {
 // Interpolates between two signed samples with a Q12 morph amount.
 // Inputs: endpoints `a` and `b`, and `t_q12` in the range 0..4096.
 // Output: a point guaranteed to stay inside the closed interval [a, b].
-int32_t DinSumEngine::LerpQ12(int32_t a, int32_t b, uint16_t t_q12) {
+int32_t __not_in_flash_func(DinSumEngine::LerpQ12)(int32_t a, int32_t b, uint16_t t_q12) {
   uint32_t t = t_q12;
   if (t > kUnityQ12) t = kUnityQ12;
   return int32_t(int64_t(a) + ((int64_t(b) - int64_t(a)) * int64_t(t) >> 12));
@@ -103,7 +104,7 @@ int32_t DinSumEngine::LerpQ12(int32_t a, int32_t b, uint16_t t_q12) {
 // Generates a PolyBLEP-corrected saw from the shared phase accumulator.
 // Inputs: current phase and phase increment in the native 32-bit phase domain.
 // Output: a band-limited saw in the signed 12-bit audio range.
-int32_t DinSumEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
+int32_t __not_in_flash_func(DinSumEngine::PolyBlepSawQ12)(uint32_t phase, uint32_t phase_inc) {
   int32_t saw = int32_t((phase >> 20) & 0x0FFFU) - 2048;
   if (phase_inc == 0U) return saw;
 
@@ -197,7 +198,7 @@ void DinSumEngine::ControlTick(const GlobalControlFrame& global, EngineControlFr
 // Out1 uses the local saw, while Out2 uses the same saw evaluated 90 degrees
 // later in phase. In alt mode, each output chooses sine or saw for whole cycles
 // with the same X-controlled probability but independent rerolls.
-void DinSumEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(DinSumEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const DinSumControlFrame& in = frame.din_sum;
 
   if (in.frame_epoch != active_frame_epoch_) {

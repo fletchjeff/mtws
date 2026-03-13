@@ -1,4 +1,5 @@
 #include "prex/mtws/engines/floatable_engine.h"
+#include "pico.h"
 
 #include "prex/mtws/wavetables/floatable_bank_1_16x256.h"
 #include "prex/mtws/wavetables/floatable_bank_2_16x256.h"
@@ -9,7 +10,7 @@ namespace mtws {
 
 namespace {
 // Clamps the audio sample to the signed 12-bit ComputerCard output range.
-inline int32_t ClampAudio12(int32_t sample) {
+inline int32_t __not_in_flash_func(ClampAudio12)(int32_t sample) {
   if (sample > 2047) return 2047;
   if (sample < -2048) return -2048;
   return sample;
@@ -25,7 +26,7 @@ void FloatableEngine::OnSelected() {
 
 // Interpolates between `a` and `b` using a Q12 fraction. `4096` is used instead
 // of `4095` so the endpoint can reach the last stored sample exactly.
-int32_t FloatableEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
+int32_t __not_in_flash_func(FloatableEngine::LerpQ12)(int32_t a, int32_t b, uint32_t t_q12) {
   if (t_q12 > 4096U) t_q12 = 4096U;
   return a + ((b - a) * int32_t(t_q12) >> 12);
 }
@@ -59,7 +60,7 @@ void FloatableEngine::ComputeWaveSelection(uint32_t axis_code,
 // - sample_index/sample_next/sample_frac_q12: oscillator phase components.
 // Output:
 // - one signed 12-bit clamped sample.
-int32_t FloatableEngine::RenderMorphedBankSample(const int16_t (*source_waves)[kSourceTableSize],
+int32_t __not_in_flash_func(FloatableEngine::RenderMorphedBankSample)(const int16_t (*source_waves)[kSourceTableSize],
                                                  uint32_t wave_index,
                                                  uint32_t wave_frac_q12,
                                                  uint32_t sample_index,
@@ -93,7 +94,7 @@ void FloatableEngine::ControlTick(const GlobalControlFrame& global, EngineContro
 // - compact floatable control data from the active double-buffered frame.
 // Outputs:
 // - out1/out2 signed 12-bit samples.
-void FloatableEngine::RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
+void __not_in_flash_func(FloatableEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const FloatableControlFrame& w = frame.floatable;
 
   phase_ += w.phase_inc;
