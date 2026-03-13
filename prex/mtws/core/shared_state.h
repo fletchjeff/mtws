@@ -6,7 +6,7 @@ namespace mtws {
 
 constexpr uint8_t kNumOscillatorSlots = 6;
 constexpr uint8_t kNumCumulusVoices = 16;
-constexpr uint8_t kNumSawsomeVoices = 7;
+constexpr uint8_t kNumSawsomeVoices = 5;
 
 struct UISnapshot {
   uint16_t knob_main;

@@ -1,20 +1,27 @@
 #include "prex/sawsome/sawsome_solo_engine.h"
 
 namespace {
-// Uneven per-voice detune offsets around the center voice in Q16 ratio space.
-// The values are intentionally not perfect mirror pairs so the voice-pair beat
-// rates do not stack into one obvious cyclic swirl.
-constexpr int32_t kDetuneOffsetQ16[7] = {-3920, -2370, -910, 0, 1040, 2610, 3550};
+constexpr int32_t kUnityQ12 = 4096;
+// The 5-voice side-voice map is derived by averaging adjacent pairs from the
+// checked-in 7-voice table. This preserves the left/right detune asymmetry while
+// removing the outermost side voice on each side.
+constexpr int32_t kDetuneOffsetQ16[SawsomeSoloEngine::kNumVoices] = {
+    -3145, -1640, 0, 1825, 3080,
+};
 // Stereo pan positions (-1..+1 in Q12) for each voice.
-constexpr int32_t kPanQ12[7] = {-3686, -2458, -1229, 0, 1229, 2458, 3686};
+constexpr int32_t kPanQ12[SawsomeSoloEngine::kNumVoices] = {
+    -3072, -1844, 0, 1844, 3072,
+};
 // Voice gain taper that emphasizes center voice while preserving side energy.
-constexpr int32_t kGainQ12[7] = {2048, 2867, 3482, 4096, 3482, 2867, 2048};
-// Center voice index in the symmetric 7-voice spread.
-constexpr uint8_t kCenterVoice = 3;
+constexpr int32_t kGainQ12[SawsomeSoloEngine::kNumVoices] = {
+    2458, 3175, 4096, 3175, 2458,
+};
+// Center voice index in the symmetric 5-voice spread.
+constexpr uint8_t kCenterVoice = 2;
 // Sum of squared full-spread voice gains. Used as the reference for makeup gain.
-constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
+constexpr uint32_t kFullSpreadPowerQ24 = 49021994U;
 // Makeup gain ceiling in Q12. 2.0x is enough to recover nearly constant power
-// from center-only up to the current 7-voice spread without letting gain run away.
+// from center-only up to the 5-voice spread without letting gain run away.
 constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 // Converts 0..4095 control values into Q12 interpolation range 0..4096.
@@ -52,7 +59,7 @@ SawsomeSoloEngine::SawsomeSoloEngine(mtws::SineLUT* lut) : lut_(lut) {
 // Resets phases (with decorrelation seeds) and triangle integrator state.
 void SawsomeSoloEngine::Init() {
   (void)lut_;
-  for (uint8_t i = 0; i < 7; ++i) {
+  for (uint8_t i = 0; i < kNumVoices; ++i) {
     phases_[i] = uint32_t(i) * 0x1f123bb5U;
     tri_state_[i] = 0;
   }
@@ -62,13 +69,13 @@ void SawsomeSoloEngine::Init() {
 void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   uint32_t width_q12 = ToQ12(control.macro_x);
   uint32_t detune_q12 = ToQ12(control.macro_y);
-  uint32_t active_gain_q12[7];
+  uint32_t active_gain_q12[kNumVoices];
   out.alt = control.alt;
 
   // Fade side voices in with detune so full CCW collapses to the center voice,
-  // while full CW restores the existing 7-voice gain distribution.
+  // while full CW restores the 5-voice gain distribution.
   uint32_t active_power_q24 = 0;
-  for (uint8_t i = 0; i < 7; ++i) {
+  for (uint8_t i = 0; i < kNumVoices; ++i) {
     uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
     if (i != kCenterVoice) {
       voice_gain_q12 = uint32_t((uint64_t(voice_gain_q12) * detune_q12 + 2048U) >> 12);
@@ -88,7 +95,7 @@ void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& contro
     if (makeup_q12 > kMaxMakeupQ12) makeup_q12 = kMaxMakeupQ12;
   }
 
-  for (uint8_t i = 0; i < 7; ++i) {
+  for (uint8_t i = 0; i < kNumVoices; ++i) {
     // Ratio = 1.0 + (voice detune offset * detune amount).
     int32_t ratio_q16 = 65536 + int32_t((int64_t(kDetuneOffsetQ16[i]) * int32_t(detune_q12)) >> 12);
     if (ratio_q16 < 32768) ratio_q16 = 32768;
@@ -98,10 +105,12 @@ void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& contro
     out.phase_increment[i] = uint32_t(inc);
 
     // Pan law: width scales fixed voice pan positions, then convert to L/R gains.
+    // The side-voice coordinates sit midway between the former 7-voice table
+    // entries so the 5-voice version keeps a familiar spread shape.
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
     int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
-    int32_t gain_l = int32_t((int64_t(voice_gain_q12) * (4096 - pan_q12)) >> 13);
-    int32_t gain_r = int32_t((int64_t(voice_gain_q12) * (4096 + pan_q12)) >> 13);
+    int32_t gain_l = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 - pan_q12)) >> 13);
+    int32_t gain_r = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 + pan_q12)) >> 13);
     if (gain_l < 0) gain_l = 0;
     if (gain_r < 0) gain_r = 0;
     out.gain_l_q12[i] = int16_t(gain_l);
@@ -150,12 +159,12 @@ int32_t SawsomeSoloEngine::PolyBlepTriangleQ12(int voice_index, uint32_t phase, 
   return Clamp12(tri_state_[voice_index] >> 5);
 }
 
-// Renders and sums all seven voices, then applies final output clamp.
+// Renders and sums all five voices, then applies final output clamp.
 void SawsomeSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2) {
   int32_t sum_l = 0;
   int32_t sum_r = 0;
 
-  for (uint8_t i = 0; i < 7; ++i) {
+  for (uint8_t i = 0; i < kNumVoices; ++i) {
     phases_[i] += frame.phase_increment[i];
     int32_t s = frame.alt ? PolyBlepTriangleQ12(i, phases_[i], frame.phase_increment[i])
                           : PolyBlepSawQ12(phases_[i], frame.phase_increment[i]);

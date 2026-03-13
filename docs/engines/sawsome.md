@@ -1,7 +1,7 @@
 # sawsome
 
 ## Goal + Sonic Intent
-A supersaw / supertriangle oscillator scaffold with 7 detuned voices, fixed stereo pan map, and JP-style spread behavior.
+A supersaw / supertriangle oscillator scaffold with 5 detuned voices, fixed stereo pan map, and JP-style spread behavior.
 
 ## Control Map
 - Main: pitch (10Hz..10kHz)
@@ -14,11 +14,11 @@ A supersaw / supertriangle oscillator scaffold with 7 detuned voices, fixed ster
 - Out2: right mix
 
 ## DSP Block Diagram
-- Normal: 7 x detuned saw (polyBLEP edge correction) -> per-voice pan/gain -> stereo sum
+- Normal: 5 x detuned saw (polyBLEP edge correction) -> per-voice pan/gain -> stereo sum
 - Alt: same voice map, waveform switched to leaky-integrated polyBLEP triangle path
 
 ## CPU-Risk Points
-- Per-voice BLEP edge checks on 7 oscillators
+- Per-voice BLEP edge checks on 5 oscillators
 - Stereo voice summing
 
 ## Milestone Steps

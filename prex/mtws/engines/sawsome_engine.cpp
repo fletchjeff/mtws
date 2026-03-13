@@ -5,16 +5,21 @@ namespace mtws {
 namespace {
 constexpr int32_t kUnityQ12 = 4096;
 constexpr int32_t kDetuneOffsetQ16[kNumSawsomeVoices] = {
-    -3920, -2370, -910, 0, 1040, 2610, 3550,
+    -3145, -1640, 0, 1825, 3080,
 };
 constexpr int32_t kPanQ12[kNumSawsomeVoices] = {
-    -3686, -2458, -1229, 0, 1229, 2458, 3686,
+    -3072, -1844, 0, 1844, 3072,
 };
 constexpr int32_t kGainQ12[kNumSawsomeVoices] = {
-    2048, 2867, 3482, 4096, 3482, 2867, 2048,
+    2458, 3175, 4096, 3175, 2458,
 };
-constexpr uint8_t kCenterVoice = 3;
-constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
+constexpr uint8_t kCenterVoice = 2;
+// Sum of squared full-spread voice gains for the 5-voice table above.
+// This reference lets the Y-control makeup gain keep level movement moderate
+// as side voices fade in from center-only to the full 5-voice spread.
+// A fixed no-makeup design was considered, but it made the detune sweep lose
+// too much level near full CCW compared with the established 7-voice behavior.
+constexpr uint32_t kFullSpreadPowerQ24 = 49021994U;
 constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 inline uint32_t U12ToQ12(uint16_t v) {
@@ -70,7 +75,7 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   out.alt = global.mode_alt;
 
   // Fade side voices in with detune so full CCW collapses toward the center
-  // oscillator while full CW restores the original 7-voice spread.
+  // oscillator while full CW restores the 5-voice spread.
   uint32_t active_power_q24 = 0;
   for (uint8_t i = 0; i < kNumSawsomeVoices; ++i) {
     uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
@@ -92,6 +97,7 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   }
 
   for (uint8_t i = 0; i < kNumSawsomeVoices; ++i) {
+    // Ratio = 1.0 + (voice detune offset * detune amount).
     int32_t ratio_q16 = 65536 + int32_t((int64_t(kDetuneOffsetQ16[i]) * int32_t(detune_q12)) >> 12);
     if (ratio_q16 < 32768) ratio_q16 = 32768;
 
@@ -99,6 +105,9 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
     if (inc > 0x7FFFFFFFULL) inc = 0x7FFFFFFFULL;
     out.voice_phase_increment[i] = uint32_t(inc);
 
+    // The new 5-voice map places each side voice halfway between its former
+    // neighboring 7-voice positions so the spread keeps the prior asymmetry
+    // while dropping one side voice per channel.
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
     int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
     int32_t gain_l_q12 = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 - pan_q12)) >> 13);
