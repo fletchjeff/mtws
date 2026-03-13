@@ -14,12 +14,28 @@
 namespace mtws {
 
 namespace {
+constexpr int32_t kUnityQ12 = 4096;
+constexpr int kVCAGainSmoothShift = 4;
 
 // Maps MIDI CC74 from 0..127 into the ComputerCard bipolar CV code range.
 // The endpoints intentionally use the full raw code span so the output is
 // approximately -6 V at startup and +6 V at the top of the CC range.
 inline int16_t MapCC74ToCV2Code(uint8_t cc74_value) {
   return int16_t(((uint32_t(cc74_value) * 4095U) + 63U) / 127U) - 2048;
+}
+
+// Slews one Q12 gain toward its latest target with a tiny integer one-pole
+// step. `shift = 4` means each sample moves by roughly 1/16 of the remaining
+// error, which was chosen as a low-cost compromise between click suppression
+// and keeping CV2 envelopes responsive.
+inline int32_t SmoothToward(int32_t current, int32_t target, int shift) {
+  if (shift <= 0) return target;
+  int32_t delta = target - current;
+  int32_t step = delta >> shift;
+  if (step == 0 && delta != 0) {
+    step = (delta > 0) ? 1 : -1;
+  }
+  return current + step;
 }
 
 }  // namespace
@@ -49,6 +65,7 @@ class MTWSApp : public ComputerCard {
         last_cv_note_sent_(255),
         last_cc74_sent_(0),
         last_pulse1_gate_sent_(2),
+        smoothed_vca_gain_q12_(kUnityQ12),
         core1_started_(false) {
     instance_ = this;
 
@@ -87,6 +104,7 @@ class MTWSApp : public ComputerCard {
       control_frames_[i].global = init_global;
       registry_.Get(init_global.selected_slot)->ControlTick(init_global, control_frames_[i].engine);
     }
+    smoothed_vca_gain_q12_ = int32_t(init_global.vca_gain_q12);
   }
 
   static void Core1Entry() {
@@ -256,9 +274,11 @@ class MTWSApp : public ComputerCard {
 
     int32_t mixed_out1 = new_out1;
     int32_t mixed_out2 = new_out2;
+    int32_t target_vca_gain_q12 = int32_t(frame.global.vca_gain_q12);
+    smoothed_vca_gain_q12_ = SmoothToward(smoothed_vca_gain_q12_, target_vca_gain_q12, kVCAGainSmoothShift);
 
-    int32_t out1 = int32_t((int64_t(mixed_out1) * frame.global.vca_gain_q12) >> 12);
-    int32_t out2 = int32_t((int64_t(mixed_out2) * frame.global.vca_gain_q12) >> 12);
+    int32_t out1 = int32_t((int64_t(mixed_out1) * smoothed_vca_gain_q12_) >> 12);
+    int32_t out2 = int32_t((int64_t(mixed_out2) * smoothed_vca_gain_q12_) >> 12);
 
     if (out1 > 2047) out1 = 2047;
     if (out1 < -2048) out1 = -2048;
@@ -294,6 +314,7 @@ class MTWSApp : public ComputerCard {
   uint8_t last_cv_note_sent_;
   uint8_t last_cc74_sent_;
   uint8_t last_pulse1_gate_sent_;
+  int32_t smoothed_vca_gain_q12_;
 
   bool core1_started_;
 };
