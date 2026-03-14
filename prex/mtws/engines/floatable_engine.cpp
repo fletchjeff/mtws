@@ -103,18 +103,19 @@ void __not_in_flash_func(FloatableEngine::RenderSample)(const EngineControlFrame
   uint32_t sample_next = (sample_index + 1U) & kSourceTableMask;
   uint32_t sample_frac_q12 = (phase_ >> kSourceTableFracShift) & 0x0FFFU;
 
-  const int16_t (*out1_source)[kSourceTableSize] =
-      (w.use_alt_banks != 0U) ? floatable_bank_3_16x256 : floatable_bank_1_16x256;
-  const int16_t (*out2_source)[kSourceTableSize] =
-      (w.use_alt_banks != 0U) ? floatable_bank_4_16x256 : floatable_bank_2_16x256;
+  // Single bank for both outputs. Normal = bank 1, alt = bank 4.
+  // X and Y select different morph positions within the same timbral space,
+  // halving the flash working set and improving XIP cache hit rate.
+  const int16_t (*source)[kSourceTableSize] =
+      (w.use_alt_banks != 0U) ? floatable_bank_4_16x256 : floatable_bank_1_16x256;
 
-  out1 = RenderMorphedBankSample(out1_source,
+  out1 = RenderMorphedBankSample(source,
                                  w.out1_wave_index,
                                  w.out1_wave_frac_q12,
                                  sample_index,
                                  sample_next,
                                  sample_frac_q12);
-  out2 = RenderMorphedBankSample(out2_source,
+  out2 = RenderMorphedBankSample(source,
                                  w.out2_wave_index,
                                  w.out2_wave_frac_q12,
                                  sample_index,
