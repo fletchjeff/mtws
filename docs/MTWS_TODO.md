@@ -84,6 +84,7 @@ if a regression or new follow-up appears in later hardware passes.
 - `Status`: Done
 - `Notes`:
     - Closed. The current I/O map below is the intended mapping for this build.
+    - User-facing reference: [MTWS_USER_GUIDE.md](MTWS_USER_GUIDE.md)
     - In:
         - Main : Tuning
         - X : Engine X
@@ -115,7 +116,7 @@ if a regression or new follow-up appears in later hardware passes.
 ### 13. Add MIDI clock on pulse 2 out
 - `Status`: Done
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp), [prex/mtws/core/midi_worker.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/core/midi_worker.cpp)
-- `Notes`: Closed. `Pulse2` now outputs clock. With external MIDI clock present it forwards divided `24 PPQN` ticks, and when MIDI clock is absent it falls back to an internal clock. Hold `Z` down and use `X` to set the external division or the internal BPM.
+- `Notes`: Closed. `Pulse2` now outputs clock. With external MIDI clock present it forwards divided `24 PPQN` ticks, and when MIDI clock is absent it falls back to an internal clock. Hold `Z` down and use `X` to set the external division or the internal BPM. See [MTWS_USER_GUIDE.md](MTWS_USER_GUIDE.md) for the current user-facing description.
 - `What to test`: Verify division choices under external MIDI clock, the internal BPM range, pulse polarity/width, and switchover between external and internal clocking.
 
 ### 14. Try reducing `sawsome` from 7 waves to 5

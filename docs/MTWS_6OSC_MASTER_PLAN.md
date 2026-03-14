@@ -5,6 +5,7 @@ Unify the project into a single modular `mtws` firmware with 6 oscillator slots,
 
 ## Follow-up Tracker
 - Active post-plan work items are tracked in [MTWS_TODO.md](/Users/jeff/Toonbox/MTWS/mtws/docs/MTWS_TODO.md).
+- Current user-facing behavior is documented in [MTWS_USER_GUIDE.md](MTWS_USER_GUIDE.md).
 
 ## Slot Map
 1. sawsome
