@@ -1,0 +1,7 @@
+interface:
+  display_name: "MTWS Oscillator Integration"
+  short_description: "Wire a new mtws slot safely"
+  default_prompt: "Use $mtws-oscillator-integration to wire this oscillator into the integrated mtws host."
+
+policy:
+  allow_implicit_invocation: true

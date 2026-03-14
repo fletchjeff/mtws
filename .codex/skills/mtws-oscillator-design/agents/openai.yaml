@@ -1,0 +1,7 @@
+interface:
+  display_name: "MTWS Oscillator Design"
+  short_description: "Spec a new mtws oscillator safely"
+  default_prompt: "Use $mtws-oscillator-design to turn this oscillator idea into a buildable mtws spec."
+
+policy:
+  allow_implicit_invocation: true
