@@ -4,13 +4,16 @@ This file tracks active follow-up work that is important, but not part of the
 core `MTWS_6OSC_MASTER_PLAN.md` acceptance matrix. Update the status and notes
 after each hardware test loop so pending work stays visible.
 
+All tracked items below are closed as of March 14, 2026. Reopen an item only
+if a regression or new follow-up appears in later hardware passes.
+
 ## Status Key
 - `Open`: not started or not resolved
 - `In Progress`: currently being worked on
 - `Blocked`: needs another dependency or decision
 - `Done`: implemented and hardware-verified
 
-## Active Items
+## Tracked Items
 
 ### 1. sawsome glitches in `mtws`
 - `Status`: Done
@@ -42,10 +45,10 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Verify CV2 disconnected = unity, connected = expected attenuation law, and compare response against Utility-Pair behavior.
 
 ### 5. Revisit `losenge` alt mode purpose
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/losenge/losenge_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/losenge/losenge_solo_engine.cpp), [prex/mtws/engines/losenge_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/losenge_engine.cpp)
-- `Notes`: `Y` already provides a continuous tract-size / male-female-style formant shift, so `alt` may be redundant as a female table switch. Decide whether to keep `alt` as a separate vowel table or repurpose it for something more distinct. Maybe try running at f2-f4, not f1-f3
-- `What to test`: Compare current `alt` behavior against a repurposed alternative after the solo engine is stabilized, then decide what should carry into integrated `mtws`.
+- `Notes`: Closed. `alt` now switches from the base `F1/F2/F3` vowel path to an upper `F2/F3/F4` formant path, which gives a brighter and more metallic contrast than the earlier female-table idea while keeping the same X-axis vowel motion.
+- `What to test`: Regression-check normal vs `alt` across the X vowel sweep and Y formant shift, and confirm the brighter alt path stays distinct and stable in integrated `mtws`.
 
 ### 6. Check Braids `HARM` and `WMAP` for optimization ideas
 - `Status`: Done
@@ -60,10 +63,10 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: Compare fold character, aliasing behavior, control feel, and level behavior between the current `bender` implementation and a Braids `FOLD` variant.
 
 ### 8. Rethink / Recheck Anti aliasing
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp)
-- `Notes`: Even with the polybleb, there is still high frequency aliasing artifacts. Look at a low pass on all outputs option
-- `What to test`: Check that high frequency aliasing goes away.
+- `Notes`: Closed in the current build. The present anti-aliasing cleanup is accepted without adding a separate global output low-pass stage.
+- `What to test`: Regression-check high-pitch behavior across the harsher engines and confirm the remaining aliasing level is acceptable in the final build.
 
 ### 9. Sub out on pulse 2
 - `Status`: Done
@@ -72,11 +75,15 @@ after each hardware test loop so pending work stays visible.
 - `What to test`: N/A for this closed item.
 
 ### 10. A bit more volume in cumulus
-- `Status`: Open
+- `Status`: Done
+- `Scope`: [prex/cumulus/cumulus_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/cumulus/cumulus_solo_engine.cpp), [prex/mtws/engines/cumulus_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/cumulus_engine.cpp)
+- `Notes`: Closed. The current cumulus output level is accepted, and no additional loudness push is planned in this pass.
+- `What to test`: Regression-check perceived loudness against the other engines across the main X/Y sweep and under MIDI note playback.
 
 ### 11. Finish I/O
-- `Status`: Open
+- `Status`: Done
 - `Notes`:
+    - Closed. The current I/O map below is the intended mapping for this build.
     - In:
         - Main : Tuning
         - X : Engine X
@@ -91,27 +98,28 @@ after each hardware test loop so pending work stays visible.
         - CV1 : last midi note
         - CV2 : Midi CC 74 mapped across raw CV range (approx `-6V..+6V`)
         - Pulse1: Midi on/off gate
-        - Pulse2: Midi clock (TODO, see item 13)
+        - Pulse2: Midi clock output
         - Audio1: Engine out 1
         - Audio2: Engine out 2
     - Midi: 
         - Channel : 1
         - Note on/off + note pitch are active
         - CC 74 -> CV2 is active
-        - CC X/Y mapping is disabled in current build
+        - CC X/Y mapping is intentionally disabled in current build
+- `What to test`: Verify the full panel and MIDI map end-to-end, especially VCA on `CV2`, alt latch, slot switching, note/gate/CV outputs, and `Pulse2` clock output.
 
 ### 12. Maybe add Reese bass to sawsome on alt for pulse width
 - `Status`: Done
 - `Notes`: Closed. No additional Reese-bass alt path planned right now.
 
 ### 13. Add MIDI clock on pulse 2 out
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/main.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/main.cpp), [prex/mtws/core/midi_worker.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/core/midi_worker.cpp)
-- `Notes`: Pulse2 out is reserved for MIDI clock instead of the older sub-out idea. Leave it unimplemented in the current pass and add clock generation later.
-- `What to test`: Verify clock pulse rate, polarity, and start/stop behavior once MIDI clock output is implemented.
+- `Notes`: Closed. `Pulse2` now outputs clock. With external MIDI clock present it forwards divided `24 PPQN` ticks, and when MIDI clock is absent it falls back to an internal clock. Hold `Z` down and use `X` to set the external division or the internal BPM.
+- `What to test`: Verify division choices under external MIDI clock, the internal BPM range, pulse polarity/width, and switchover between external and internal clocking.
 
 ### 14. Try reducing `sawsome` from 7 waves to 5
-- `Status`: Open
+- `Status`: Done
 - `Scope`: [prex/mtws/engines/sawsome_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/sawsome_engine.cpp), [prex/sawsome/sawsome_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/sawsome/sawsome_solo_engine.cpp)
-- `Notes`: Check whether dropping `sawsome` from `7` waves/voices to `5` buys enough audio headroom to avoid the remaining glitch risk under heavier control or MIDI activity. Keep the character as close as possible to the current spread and level behavior if this is tried.
-- `What to test`: Compare `7` vs `5` waves for CPU stability, glitch resistance, stereo spread, loudness balance, and tone in both normal and alt modes.
+- `Notes`: Closed after rechecking the optimized `7`-voice path. The build stays at `7` voices, and the `5`-voice fallback is not needed in the current pass.
+- `What to test`: Regression-check high pitch, wide spread, and heavier MIDI/control activity to confirm the `7`-voice configuration remains stable.
