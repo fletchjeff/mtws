@@ -39,6 +39,28 @@ inline int32_t __not_in_flash_func(SmoothToward)(int32_t current, int32_t target
   return current + step;
 }
 
+// Available clock divisions for MIDI clock mode. Each entry is the number of
+// input ticks (at 24 PPQN) per output pulse. Spread as 8 equal steps across
+// the X knob. All values divide evenly into 24 for clean timing.
+constexpr uint8_t kClockDivisions[] = {24, 12, 8, 6, 4, 3, 2, 1};
+constexpr uint8_t kNumClockDivisions = 8;
+
+// Maps X knob (0..4095) to an index in kClockDivisions (0..7).
+inline uint8_t ClockDivisionIndexFromKnobX(uint16_t knob_x) {
+  uint32_t idx = (uint32_t(knob_x) * kNumClockDivisions) >> 12;
+  if (idx >= kNumClockDivisions) idx = kNumClockDivisions - 1U;
+  return uint8_t(idx);
+}
+
+// Maps X knob (0..4095) to an internal clock period in control ticks.
+// 20 BPM = 3000 ticks, 999 BPM = 60 ticks (linear across the knob).
+inline uint32_t InternalClockPeriodFromKnobX(uint16_t knob_x) {
+  uint32_t bpm = 20U + ((uint32_t(knob_x) * 979U + 2048U) >> 12);
+  if (bpm < 20U) bpm = 20U;
+  if (bpm > 999U) bpm = 999U;
+  return 60000U / bpm;
+}
+
 }  // namespace
 
 class MTWSApp : public ComputerCard {
@@ -47,6 +69,10 @@ class MTWSApp : public ComputerCard {
   static constexpr uint32_t kControlPeriodUs = (kControlDivisor * 1000000U) / 48000U;
   static constexpr uint8_t kSwitchDebounceTicks = 3;
   static constexpr uint32_t kNoteFlashOffSamples = 960;  // ~20ms
+  // Control ticks without a new MIDI clock tick before switching to internal.
+  static constexpr uint32_t kClockTimeoutTicks = 500;
+  // ~5ms pulse width = 5 control ticks at ~1kHz control rate.
+  static constexpr uint32_t kPulseWidthTicks = 5;
 
   MTWSApp()
       : lut_(),
@@ -67,7 +93,14 @@ class MTWSApp : public ComputerCard {
         last_cc74_sent_(0),
         last_pulse1_gate_sent_(2),
         smoothed_vca_gain_q12_(kUnityQ12),
-        core1_started_(false) {
+        core1_started_(false),
+        last_clock_tick_seen_(0),
+        clock_inactive_counter_(kClockTimeoutTicks),
+        clock_division_ticks_(6),
+        midi_clock_div_counter_(0),
+        internal_clock_period_(500),
+        internal_clock_counter_(500),
+        pulse2_width_counter_(0) {
     instance_ = this;
 
     EnableNormalisationProbe();
@@ -99,6 +132,7 @@ class MTWSApp : public ComputerCard {
     init_midi.last_note = 60;
     init_midi.cc74_value = 0;
     init_midi.note_on_counter = 0;
+    init_midi.clock_tick_count = 0;
 
     GlobalControlFrame init_global = ControlRouter::BuildGlobalFrame(init_ui, init_midi);
     for (int i = 0; i < 2; ++i) {
@@ -244,6 +278,60 @@ class MTWSApp : public ComputerCard {
     }
   }
 
+  // Drives PulseOut2 as a clock output. In MIDI clock mode, forwards 0xF8
+  // ticks at the configured division. In internal mode, generates pulses at
+  // the configured BPM. Configuration is set by holding Z down + X knob.
+  inline void __not_in_flash_func(UpdateClockOutput)(const GlobalControlFrame& global) {
+    const uint32_t tick_count = global.midi_clock_tick_count;
+    const bool new_ticks = (tick_count != last_clock_tick_seen_);
+    const bool midi_clock_active = (clock_inactive_counter_ < kClockTimeoutTicks);
+
+    // Configuration mode: Z switch held down.
+    if (switch_stable_ == Down) {
+      uint16_t knob_x = uint16_t(KnobVal(Knob::X) < 0 ? 0 : (KnobVal(Knob::X) > 4095 ? 4095 : KnobVal(Knob::X)));
+      if (midi_clock_active) {
+        clock_division_ticks_ = kClockDivisions[ClockDivisionIndexFromKnobX(knob_x)];
+      } else {
+        internal_clock_period_ = InternalClockPeriodFromKnobX(knob_x);
+      }
+    }
+
+    bool fire_pulse = false;
+
+    if (new_ticks) {
+      uint32_t incoming = tick_count - last_clock_tick_seen_;
+      last_clock_tick_seen_ = tick_count;
+      clock_inactive_counter_ = 0;
+
+      midi_clock_div_counter_ += incoming;
+      if (midi_clock_div_counter_ >= clock_division_ticks_) {
+        midi_clock_div_counter_ = 0;
+        fire_pulse = true;
+      }
+    } else {
+      if (clock_inactive_counter_ < kClockTimeoutTicks) {
+        ++clock_inactive_counter_;
+      }
+    }
+
+    // Internal clock when MIDI clock is absent.
+    if (!midi_clock_active && !new_ticks) {
+      if (internal_clock_counter_ == 0) {
+        internal_clock_counter_ = internal_clock_period_;
+        fire_pulse = true;
+      }
+      --internal_clock_counter_;
+    }
+
+    if (fire_pulse) {
+      pulse2_width_counter_ = kPulseWidthTicks;
+    }
+    if (pulse2_width_counter_ > 0) {
+      --pulse2_width_counter_;
+    }
+    PulseOut2(pulse2_width_counter_ > 0);
+  }
+
   virtual void __not_in_flash_func(ProcessSample)() override {
     if (!core1_started_) {
       core1_started_ = true;
@@ -259,6 +347,7 @@ class MTWSApp : public ComputerCard {
       const ControlFrame& frame = control_frames_[read_index];
       UpdateSlotLEDs(frame);
       UpdateMIDIOutputs(frame.global);
+      UpdateClockOutput(frame.global);
     }
 
     if (note_flash_samples_remaining_ > 0) {
@@ -318,6 +407,15 @@ class MTWSApp : public ComputerCard {
   int32_t smoothed_vca_gain_q12_;
 
   bool core1_started_;
+
+  // Clock output state.
+  uint32_t last_clock_tick_seen_;
+  uint32_t clock_inactive_counter_;
+  uint32_t clock_division_ticks_;
+  uint32_t midi_clock_div_counter_;
+  uint32_t internal_clock_period_;
+  uint32_t internal_clock_counter_;
+  uint32_t pulse2_width_counter_;
 };
 
 MTWSApp* MTWSApp::instance_ = nullptr;

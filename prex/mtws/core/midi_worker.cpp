@@ -50,6 +50,7 @@ MIDIWorker::MIDIWorker() {
   state_.last_note = 60;
   state_.cc74_value = 0;
   state_.note_on_counter = 0;
+  state_.clock_tick_count = 0;
   pending_bytes_[0] = 0;
   pending_bytes_[1] = 0;
   pending_bytes_[2] = 0;
@@ -62,6 +63,13 @@ void MIDIWorker::Init() {
 
 void MIDIWorker::HandleShortMessage(uint8_t status, uint8_t data1, uint8_t data2, MidiState& next_state) const {
   if ((status & 0x80U) == 0U) return;
+
+  // System realtime messages (0xF8-0xFF) carry no channel and must be
+  // handled before the channel filter below.
+  if (status == 0xF8U) {
+    next_state.clock_tick_count++;
+    return;
+  }
 
   uint8_t status_nibble = status & 0xF0U;
   uint8_t channel = status & 0x0FU;

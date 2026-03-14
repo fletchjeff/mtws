@@ -163,6 +163,7 @@ GlobalControlFrame ControlRouter::BuildGlobalFrame(const UISnapshot& ui, const M
   out.last_midi_note = midi.last_note;
   out.midi_cc74_value = midi.cc74_value;
   out.note_on_counter = midi.note_on_counter;
+  out.midi_clock_tick_count = midi.clock_tick_count;
 
   return out;
 }

@@ -31,6 +31,8 @@ struct MidiState {
   uint8_t last_note;
   uint8_t cc74_value;
   uint32_t note_on_counter;
+  // Monotonic counter of received 0xF8 MIDI clock ticks.
+  uint32_t clock_tick_count;
 };
 
 struct GlobalControlFrame {
@@ -45,6 +47,7 @@ struct GlobalControlFrame {
   uint8_t midi_cc74_value;
   bool midi_note_active;
   uint32_t note_on_counter;
+  uint32_t midi_clock_tick_count;
 };
 
 struct SawsomeControlFrame {
