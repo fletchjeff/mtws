@@ -17,8 +17,8 @@ class SawsomeEngine : public EngineInterface {
   static constexpr int32_t kUnityQ12 = 4096;
 
   static int32_t Clamp12(int32_t v);
-  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc);
-  int32_t PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc);
+  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24);
+  int32_t PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc, uint32_t recip_q24);
 
   uint32_t phases_[kNumSawsomeVoices];
   int32_t tri_state_[kNumSawsomeVoices];

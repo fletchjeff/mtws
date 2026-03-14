@@ -96,10 +96,12 @@ int32_t __not_in_flash_func(LosengeEngine::Clamp12)(int32_t v) {
 }
 
 // Converts Hz into a 0.32 phase increment for a 48kHz sample rate.
-// In plain language: one second of phase travel is 2^32 units, so the per-sample
-// step is hz / 48000 of that full cycle. This mirrors the solo engine exactly.
+// Uses a constant reciprocal multiply instead of a 64-bit division by 48000.
+// 2^32 / 48000 = 89478.485..., so hz * 89478 gives the phase increment with
+// sub-Hz accuracy across the formant range (40-6000 Hz). This saves ~80 cycles
+// per call vs the 64-bit division, and is called 6 times per control tick.
 uint32_t LosengeEngine::HzToPhaseIncrement(uint32_t hz) {
-  return uint32_t((uint64_t(hz) << 32) / 48000ULL);
+  return uint32_t(uint64_t(hz) * 89478ULL);
 }
 
 // Applies a Q12 tract-size shift to a formant frequency in Hz.

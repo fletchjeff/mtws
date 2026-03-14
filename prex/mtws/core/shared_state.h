@@ -49,6 +49,10 @@ struct GlobalControlFrame {
 
 struct SawsomeControlFrame {
   uint32_t voice_phase_increment[kNumSawsomeVoices];
+  // Precomputed reciprocal for PolyBLEP: (1<<36) / phase_inc, computed at
+  // control rate so audio-rate BLEP uses a 64-bit multiply (~15 cycles)
+  // instead of a 64-bit division (~80 cycles).
+  uint32_t voice_phase_inc_recip_q24[kNumSawsomeVoices];
   int16_t voice_gain_l_q12[kNumSawsomeVoices];
   int16_t voice_gain_r_q12[kNumSawsomeVoices];
   bool alt;
@@ -93,6 +97,8 @@ struct LosengeControlFrame {
 
 struct DinSumControlFrame {
   uint32_t phase_increment;
+  // Precomputed PolyBLEP reciprocal, same scheme as SawsomeControlFrame.
+  uint32_t phase_inc_recip_q24;
   uint16_t morph_q12;
   uint16_t coherence_q12;
   int16_t random_lp_prev;

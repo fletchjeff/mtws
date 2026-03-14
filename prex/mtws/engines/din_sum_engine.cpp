@@ -101,22 +101,14 @@ int32_t __not_in_flash_func(DinSumEngine::LerpQ12)(int32_t a, int32_t b, uint16_
   return int32_t(int64_t(a) + ((int64_t(b) - int64_t(a)) * int64_t(t) >> 12));
 }
 
-// Generates a PolyBLEP-corrected saw from the shared phase accumulator.
-// Inputs: current phase and phase increment in the native 32-bit phase domain.
-// Output: a band-limited saw in the signed 12-bit audio range.
-int32_t __not_in_flash_func(DinSumEngine::PolyBlepSawQ12)(uint32_t phase, uint32_t phase_inc) {
+// Generates a PolyBLEP-corrected saw using a precomputed reciprocal to avoid
+// 64-bit divisions at audio rate. See SawsomeEngine for the reciprocal scheme.
+int32_t __not_in_flash_func(DinSumEngine::PolyBlepSawQ12)(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24) {
   int32_t saw = int32_t((phase >> 20) & 0x0FFFU) - 2048;
   if (phase_inc == 0U) return saw;
 
   if (phase < phase_inc) {
-    // Leading discontinuity correction. The numerator/denominator pair maps the
-    // current phase position inside the BLEP window into Q12 0..4096. Q12 was
-    // chosen because it keeps the correction accurate enough while staying in
-    // cheap integer math. Alternative considered: a wider Q domain for a tiny
-    // accuracy gain, but that would cost more CPU in the audio loop.
-    // CPU vs memory tradeoff: this uses a few arithmetic ops instead of a BLEP
-    // lookup table, which keeps flash use down for one oscillator voice.
-    uint32_t t_q12 = uint32_t((uint64_t(phase) << 12) / phase_inc);
+    uint32_t t_q12 = uint32_t((uint64_t(phase) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = x + x - int32_t((int64_t(x) * x) >> 12) - 4096;
     saw -= corr >> 1;
@@ -124,8 +116,7 @@ int32_t __not_in_flash_func(DinSumEngine::PolyBlepSawQ12)(uint32_t phase, uint32
 
   uint32_t tail = 0xFFFFFFFFU - phase;
   if (tail < phase_inc) {
-    // Trailing discontinuity correction using the same Q12 BLEP window.
-    uint32_t t_q12 = uint32_t((uint64_t(tail) << 12) / phase_inc);
+    uint32_t t_q12 = uint32_t((uint64_t(tail) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = int32_t((int64_t(x) * x) >> 12);
     saw += corr >> 1;
@@ -183,6 +174,7 @@ void DinSumEngine::ControlTick(const GlobalControlFrame& global, EngineControlFr
   ++frame_epoch_counter_;
 
   out.phase_increment = global.pitch_inc;
+  out.phase_inc_recip_q24 = (global.pitch_inc > 0) ? uint32_t((1ULL << 36) / global.pitch_inc) : 0U;
   out.morph_q12 = morph_q12;
   out.coherence_q12 = coherence_q12;
   out.random_lp_prev = random_lp_prev;
@@ -211,8 +203,8 @@ void __not_in_flash_func(DinSumEngine::RenderSample)(const EngineControlFrame& f
   const bool wrapped = phase_ < previous_phase;
 
   const int32_t sine = lut_->LookupLinear(phase_);
-  const int32_t saw_up = PolyBlepSawQ12(phase_, in.phase_increment);
-  const int32_t saw_up_shifted = PolyBlepSawQ12(phase_ + kOut2SawPhaseOffset, in.phase_increment);
+  const int32_t saw_up = PolyBlepSawQ12(phase_, in.phase_increment, in.phase_inc_recip_q24);
+  const int32_t saw_up_shifted = PolyBlepSawQ12(phase_ + kOut2SawPhaseOffset, in.phase_increment, in.phase_inc_recip_q24);
 
   if (in.alt) {
     // Low Y increases hold length so waveform-family decisions persist across

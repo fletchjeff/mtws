@@ -33,7 +33,7 @@ class DinSumEngine : public EngineInterface {
   // Interpolates between two signed audio samples with a Q12 morph amount.
   static int32_t LerpQ12(int32_t a, int32_t b, uint16_t t_q12);
   // Generates a band-limited saw from the shared phase accumulator.
-  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc);
+  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24);
   // Advances the control-rate PRNG and returns a bipolar 12-bit random value.
   static int16_t Rand12Bipolar(uint32_t& state);
   // Advances the audio-rate PRNG and returns a unipolar 12-bit random value.
