@@ -6,21 +6,19 @@ namespace mtws {
 namespace {
 constexpr int32_t kUnityQ12 = 4096;
 constexpr int32_t kDetuneOffsetQ16[kNumSawsomeVoices] = {
-    -3145, -1640, 0, 1825, 3080,
+    -3920, -2370, -910, 0, 1040, 2610, 3550,
 };
 constexpr int32_t kPanQ12[kNumSawsomeVoices] = {
-    -3072, -1844, 0, 1844, 3072,
+    -3686, -2458, -1229, 0, 1229, 2458, 3686,
 };
 constexpr int32_t kGainQ12[kNumSawsomeVoices] = {
-    2458, 3175, 4096, 3175, 2458,
+    2048, 2867, 3482, 4096, 3482, 2867, 2048,
 };
-constexpr uint8_t kCenterVoice = 2;
-// Sum of squared full-spread voice gains for the 5-voice table above.
+constexpr uint8_t kCenterVoice = 3;
+// Sum of squared full-spread voice gains for the 7-voice table above.
 // This reference lets the Y-control makeup gain keep level movement moderate
-// as side voices fade in from center-only to the full 5-voice spread.
-// A fixed no-makeup design was considered, but it made the detune sweep lose
-// too much level near full CCW compared with the established 7-voice behavior.
-constexpr uint32_t kFullSpreadPowerQ24 = 49021994U;
+// as side voices fade in from center-only to the full 7-voice spread.
+constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
 constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 inline uint32_t U12ToQ12(uint16_t v) {
