@@ -61,6 +61,14 @@ inline uint32_t InternalClockPeriodFromKnobX(uint16_t knob_x) {
   return 60000U / bpm;
 }
 
+// Clamps one raw knob reading into the documented 12-bit panel range so the
+// rest of the control path can work in a consistent 0..4095 domain.
+inline uint16_t ClampKnobU12(int32_t knob_value) {
+  if (knob_value < 0) return 0;
+  if (knob_value > 4095) return 4095;
+  return uint16_t(knob_value);
+}
+
 }  // namespace
 
 class MTWSApp : public ComputerCard {
@@ -73,6 +81,9 @@ class MTWSApp : public ComputerCard {
   static constexpr uint32_t kClockTimeoutTicks = 500;
   // ~5ms pulse width = 5 control ticks at ~1kHz control rate.
   static constexpr uint32_t kPulseWidthTicks = 5;
+  // Requiring 16 raw knob counts cancels only deliberate X movement while
+  // still ignoring the small idle jitter the smoothed knob can report.
+  static constexpr uint16_t kZSwitchClockConfigDeadband = 16;
 
   MTWSApp()
       : lut_(),
@@ -87,6 +98,10 @@ class MTWSApp : public ComputerCard {
         pulse2_high_prev_(false),
         panel_alt_latched_(false),
         selected_slot_(5),
+        z_switch_hold_active_(false),
+        z_switch_slot_armed_(false),
+        z_switch_clock_edit_active_(false),
+        z_switch_down_knob_x_(0),
         seen_note_on_counter_(0),
         note_flash_samples_remaining_(0),
         last_cv_note_sent_(255),
@@ -183,6 +198,7 @@ class MTWSApp : public ComputerCard {
 
   inline void __not_in_flash_func(CaptureUISnapshotAndHandleSwitching)() {
     Switch prev_stable = switch_stable_;
+    const uint16_t knob_x = ClampKnobU12(KnobVal(Knob::X));
     Switch sw = SwitchVal();
     if (sw != switch_candidate_) {
       switch_candidate_ = sw;
@@ -200,9 +216,31 @@ class MTWSApp : public ComputerCard {
     }
     sw = switch_stable_;
 
+    const bool entered_down = (sw == Down) && (prev_stable != Down);
+    const bool left_down = z_switch_hold_active_ && (sw != Down);
+    if (entered_down) {
+      // A fresh Z-down gesture starts with one pending slot advance. Moving X
+      // far enough while held converts that gesture into clock setup instead.
+      z_switch_hold_active_ = true;
+      z_switch_slot_armed_ = true;
+      z_switch_clock_edit_active_ = false;
+      z_switch_down_knob_x_ = knob_x;
+    }
+    if (z_switch_hold_active_ && sw == Down) {
+      int32_t knob_delta = int32_t(knob_x) - int32_t(z_switch_down_knob_x_);
+      if (knob_delta < 0) knob_delta = -knob_delta;
+      if (knob_delta >= int32_t(kZSwitchClockConfigDeadband)) {
+        z_switch_slot_armed_ = false;
+        z_switch_clock_edit_active_ = true;
+      }
+    }
+
     const bool pulse2_high = Connected(Input::Pulse2) && PulseIn2();
     const bool pulse2_rising = pulse2_high && !pulse2_high_prev_;
     pulse2_high_prev_ = pulse2_high;
+    // Keep Pulse2 slot switching masked for the entire Z-down gesture,
+    // including the debounced release tick that resolves the pending slot tap.
+    const bool pulse2_slot_switch_masked = z_switch_hold_active_;
 
     if (sw == Up) {
       panel_alt_latched_ = true;
@@ -210,8 +248,17 @@ class MTWSApp : public ComputerCard {
       panel_alt_latched_ = false;
     }
 
-    bool down_edge = (sw == Down) && (prev_stable != Down);
-    if (down_edge || pulse2_rising) {
+    if (left_down) {
+      if ((sw == Middle) && z_switch_slot_armed_) {
+        // Slot changes are hard cuts. This removes the extra render of the
+        // previous engine from the audio callback so switching costs no more
+        // than normal steady-state rendering.
+        AdvanceSelectedSlot();
+      }
+      z_switch_hold_active_ = false;
+      z_switch_slot_armed_ = false;
+      z_switch_clock_edit_active_ = false;
+    } else if (pulse2_rising && !pulse2_slot_switch_masked) {
       // Slot changes are hard cuts. This removes the extra render of the
       // previous engine from the audio callback so switching costs no more than
       // normal steady-state rendering.
@@ -219,9 +266,9 @@ class MTWSApp : public ComputerCard {
     }
 
     UISnapshot ui{};
-    ui.knob_main = uint16_t(KnobVal(Knob::Main) < 0 ? 0 : (KnobVal(Knob::Main) > 4095 ? 4095 : KnobVal(Knob::Main)));
-    ui.knob_x = uint16_t(KnobVal(Knob::X) < 0 ? 0 : (KnobVal(Knob::X) > 4095 ? 4095 : KnobVal(Knob::X)));
-    ui.knob_y = uint16_t(KnobVal(Knob::Y) < 0 ? 0 : (KnobVal(Knob::Y) > 4095 ? 4095 : KnobVal(Knob::Y)));
+    ui.knob_main = ClampKnobU12(KnobVal(Knob::Main));
+    ui.knob_x = knob_x;
+    ui.knob_y = ClampKnobU12(KnobVal(Knob::Y));
 
     ui.cv1 = int16_t(CVIn1());
     ui.cv2 = int16_t(CVIn2());
@@ -286,9 +333,10 @@ class MTWSApp : public ComputerCard {
     const bool new_ticks = (tick_count != last_clock_tick_seen_);
     const bool midi_clock_active = (clock_inactive_counter_ < kClockTimeoutTicks);
 
-    // Configuration mode: Z switch held down.
-    if (switch_stable_ == Down) {
-      uint16_t knob_x = uint16_t(KnobVal(Knob::X) < 0 ? 0 : (KnobVal(Knob::X) > 4095 ? 4095 : KnobVal(Knob::X)));
+    // Configuration mode starts only after X has moved far enough to claim the
+    // gesture, so pressing Z alone leaves the previous clock setting intact.
+    if ((switch_stable_ == Down) && z_switch_clock_edit_active_) {
+      uint16_t knob_x = ClampKnobU12(KnobVal(Knob::X));
       if (midi_clock_active) {
         clock_division_ticks_ = kClockDivisions[ClockDivisionIndexFromKnobX(knob_x)];
       } else {
@@ -398,6 +446,10 @@ class MTWSApp : public ComputerCard {
   bool pulse2_high_prev_;
   bool panel_alt_latched_;
   uint8_t selected_slot_;
+  bool z_switch_hold_active_;
+  bool z_switch_slot_armed_;
+  bool z_switch_clock_edit_active_;
+  uint16_t z_switch_down_knob_x_;
 
   uint32_t seen_note_on_counter_;
   int note_flash_samples_remaining_;

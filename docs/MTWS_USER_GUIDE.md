@@ -20,7 +20,7 @@ This guide covers the integrated `mtws` firmware in `prex/mtws`.
 1. Patch `Audio1 out` and `Audio2 out` to your mixer or monitor path.
 2. Use `Main` to tune the current slot.
 3. Use `Z Up` for Alt and `Z Middle` for Normal.
-4. Move `Z` to `Down` to advance to the next slot.
+4. Tap `Z` to `Down` and let it return to `Middle` to advance to the next slot.
 5. Patch `Audio1 input` or `Audio2 input` if you want external modulation of `X` or `Y`.
 6. Patch `CV2 input` if you want a post-engine VCA.
 7. Connect USB MIDI if you want note, gate, CV, and clock behavior.
@@ -60,12 +60,14 @@ Current behavior notes:
 
 - `Z Up`: latch Alt mode.
 - `Z Middle`: latch Normal mode.
-- `Z Down`: advance to the next slot on entry.
+- `Z Down`: arms one slot advance for the return to `Middle`.
 - While `Z` is held `Down`, the `X` knob configures `Pulse2 output` clock behavior.
+- Moving `X` while `Z` is held `Down` cancels that pending slot advance and turns the gesture into clock setup.
+- Pressing `Z` alone does not change the stored clock setting. The clock setting changes only after a deliberate `X` move while `Z` is held.
 
 Important current-build detail:
 
-- Entering `Z Down` always advances the slot once before you use it as clock-setup mode.
+- Slot advance now happens on the debounced `Down -> Middle` return, not on entry into `Down`.
 
 ## Inputs
 
@@ -107,6 +109,7 @@ When those inputs are unplugged:
 
 - `Pulse2 input` advances to the next slot on each rising edge.
 - This only happens when the `Pulse2 input` jack is detected.
+- While `Z` is held `Down`, `Pulse2 input` slot advance is suspended until the gesture completes.
 
 ## Outputs
 
@@ -165,11 +168,17 @@ Important scope note:
 ### How To Set Pulse2 Clock
 
 1. Move `Z` to `Down`.
-2. The slot advances once when you enter `Down`.
-3. Keep `Z` held `Down`.
-4. Turn `X`.
-5. If external MIDI clock is active, `X` selects the output division.
-6. If external MIDI clock is inactive, `X` sets the internal BPM.
+2. Keep `Z` held `Down`.
+3. Turn `X` if you want to edit the clock setting.
+4. If external MIDI clock is active, `X` selects the output division.
+5. If external MIDI clock is inactive, `X` sets the internal BPM.
+6. Return `Z` to `Middle` when you are done.
+
+Clock-setup gesture note:
+
+- If `X` stays still while `Z` is held, the release back to `Middle` advances one slot.
+- If `X` moves while `Z` is held, that release does not advance the slot.
+- The previous BPM or clock division stays in effect until `X` has moved enough to claim the clock-edit gesture.
 
 ### External MIDI Clock Divisions
 
