@@ -28,15 +28,18 @@ constexpr VowelAnchor kMaleAnchors[kNumVowelAnchors] = {
     {{415U, 1400U, 2200U}, {4096U, 1028U, 648U}},   // U
 };
 
-// Female anchor path inferred from the male table using average published
-// female/male formant ratios. This preserves the same vowel path while lifting
-// the formants into a female range for alt mode.
-constexpr VowelAnchor kFemaleAnchors[kNumVowelAnchors] = {
-    {{713U, 1180U, 2818U}, {4096U, 2052U, 1028U}},  // A
-    {{468U, 2006U, 2645U}, {4096U, 1454U, 1630U}},  // E
-    {{278U, 2054U, 2818U}, {4096U, 410U, 648U}},    // IY
-    {{380U, 826U, 2932U}, {4096U, 1028U, 205U}},    // O
-    {{486U, 1652U, 2530U}, {4096U, 1028U, 648U}},   // U
+// Alt-mode anchor path using the male F2/F3/F4 formants instead of F1/F2/F3.
+// Dropping F1 removes the low-frequency chest of the vowel, producing a
+// brighter, thinner, more metallic character. F4 values are ~3300-3500 Hz
+// (typical adult male range from published phonetics data). The vowel identity
+// is preserved because F2/F3 ratios -- the primary cue -- are unchanged.
+// F4 gains are reduced since the fourth formant is naturally quieter.
+constexpr VowelAnchor kUpperAnchors[kNumVowelAnchors] = {
+    {{1000U, 2450U, 3300U}, {4096U, 2052U, 1028U}},  // A
+    {{1700U, 2300U, 3500U}, {4096U, 1454U, 1028U}},  // E
+    {{1741U, 2450U, 3300U}, {4096U, 410U, 410U}},    // IY
+    {{700U, 2550U, 3400U}, {4096U, 1028U, 205U}},    // O
+    {{1400U, 2200U, 3300U}, {4096U, 1028U, 410U}},   // U
 };
 
 // Interpolates across the vowel path so X moves through named vowels instead of
@@ -131,16 +134,17 @@ int32_t __not_in_flash_func(LosengeEngine::MixFormantsQ12)(int32_t f1,
 // Converts global controls into a Braids-style vocal-oscillator frame.
 // Main sets pitch, X navigates named vowel anchors for Out1, Out2 uses the
 // inverse path position so the channels move oppositely without wrapping, Y
-// applies a shared formant shift, and alt switches to the female anchor set.
+// applies a shared formant shift, and alt switches from the standard F1/F2/F3
+// formant set to the upper F2/F3/F4 set for a brighter, more metallic timbre.
 void LosengeEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
   LosengeControlFrame& out = frame.losenge;
   out.phase_increment = global.pitch_inc;
 
   const uint16_t x_q12 = ToU12Q12(global.macro_x);
   const uint16_t out2_x_q12 = uint16_t(4096U - x_q12);
-  const VowelAnchor out1_vowel = global.mode_alt ? InterpolateVowelPath(kFemaleAnchors, x_q12)
+  const VowelAnchor out1_vowel = global.mode_alt ? InterpolateVowelPath(kUpperAnchors, x_q12)
                                                  : InterpolateVowelPath(kMaleAnchors, x_q12);
-  const VowelAnchor out2_vowel = global.mode_alt ? InterpolateVowelPath(kFemaleAnchors, out2_x_q12)
+  const VowelAnchor out2_vowel = global.mode_alt ? InterpolateVowelPath(kUpperAnchors, out2_x_q12)
                                                  : InterpolateVowelPath(kMaleAnchors, out2_x_q12);
 
   // Y is centered at 1.0x shift so the middle position sounds neutral. Full CCW
