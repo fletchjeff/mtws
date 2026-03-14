@@ -72,8 +72,8 @@ struct BenderControlFrame {
 struct FloatableControlFrame {
   // Oscillator phase increment in 0.32 phase units/sample.
   uint32_t phase_inc;
-  // Selects the active source bank pair.
-  // 0: Out1/Out2 = bank1/bank2, 1: Out1/Out2 = bank3/bank4.
+  // Selects the active curated source bank.
+  // 0: both outputs read bank 1, 1: both outputs read bank 4.
   uint8_t use_alt_banks;
   // Base source-wave index for Out1 morph in 0..14.
   uint8_t out1_wave_index;

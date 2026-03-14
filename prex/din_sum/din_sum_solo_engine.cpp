@@ -26,6 +26,9 @@ constexpr uint16_t kHalfQ12 = 2048U;
 // family longer; high Y rerolls almost every wrap.
 constexpr uint8_t kAltHoldCyclesMin = 1U;
 constexpr uint8_t kAltHoldCyclesMax = 8U;
+// A 90-degree phase offset keeps Out2 distinct at the saw end while preserving
+// a musically useful mono sum.
+constexpr uint32_t kOut2SawPhaseOffset = 0x40000000U;
 }  // namespace
 
 // Creates the oscillator and initializes the shared sine LUT dependency.
@@ -54,7 +57,6 @@ DinSumSoloEngine::DinSumSoloEngine(mtws::SineLUT* lut)
 // Inputs: none.
 // Outputs: internal state set to the initial pure-sine-ready condition.
 void DinSumSoloEngine::Init() {
-  (void)lut_;
   random_state_ = 1U;
   alt_random_state_ = 0x6d2b79f5U;
   phase_ = 0U;
@@ -89,19 +91,17 @@ int32_t DinSumSoloEngine::LerpQ12(int32_t a, int32_t b, uint16_t t_q12) {
 }
 
 // Generates a PolyBLEP-corrected saw from the shared phase accumulator.
-// Inputs: current phase and phase increment in the native 32-bit phase domain.
+// Inputs: current phase, phase increment, and the precomputed reciprocal used
+// to replace audio-rate division with a multiply.
 // Output: a band-limited saw in the signed 12-bit audio range.
-int32_t DinSumSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
+int32_t DinSumSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24) {
   int32_t saw = int32_t((phase >> 20) & 0x0FFFU) - 2048;
   if (phase_inc == 0U) return saw;
 
   if (phase < phase_inc) {
-    // Leading discontinuity correction. The numerator/denominator pair maps the
-    // current phase position inside the BLEP window into Q12 0..4096. Q12 is
-    // used here because it keeps the correction accurate enough while staying
-    // in cheap 32-bit math. A wider Q domain would cost more CPU for little
-    // audible benefit in this single-oscillator context.
-    uint32_t t_q12 = uint32_t((uint64_t(phase) << 12) / phase_inc);
+    // Leading discontinuity correction. The reciprocal keeps the same BLEP
+    // shape as the integrated engine while avoiding a 64-bit divide here.
+    uint32_t t_q12 = uint32_t((uint64_t(phase) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = x + x - int32_t((int64_t(x) * x) >> 12) - 4096;
     saw -= corr >> 1;
@@ -109,8 +109,8 @@ int32_t DinSumSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
 
   uint32_t tail = 0xFFFFFFFFU - phase;
   if (tail < phase_inc) {
-    // Trailing discontinuity correction using the same Q12 BLEP window.
-    uint32_t t_q12 = uint32_t((uint64_t(tail) << 12) / phase_inc);
+    // Trailing discontinuity correction using the same reciprocal form.
+    uint32_t t_q12 = uint32_t((uint64_t(tail) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = int32_t((int64_t(x) * x) >> 12);
     saw += corr >> 1;
@@ -166,6 +166,7 @@ void DinSumSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control
   ++frame_epoch_counter_;
 
   out.phase_increment = control.pitch_inc;
+  out.phase_inc_recip_q24 = (control.pitch_inc > 0U) ? uint32_t((1ULL << 36) / control.pitch_inc) : 0U;
   out.morph_q12 = morph_q12;
   out.coherence_q12 = coherence_q12;
   out.random_lp_prev = random_lp_prev;
@@ -197,11 +198,10 @@ void DinSumSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, int
   const bool wrapped = phase_ < previous_phase;
 
   const int32_t sine = lut_->LookupLinear(phase_);
-  const int32_t saw_up = PolyBlepSawQ12(phase_, frame.phase_increment);
-  // A 90-degree phase offset is 0x40000000 in the native 32-bit phase domain.
-  // Reusing the same PolyBLEP generator keeps both outputs on the same
-  // anti-aliased saw implementation while moving only Out2's saw endpoint.
-  const int32_t saw_up_shifted = PolyBlepSawQ12(phase_ + 0x40000000U, frame.phase_increment);
+  const int32_t saw_up = PolyBlepSawQ12(phase_, frame.phase_increment, frame.phase_inc_recip_q24);
+  const int32_t saw_up_shifted = PolyBlepSawQ12(phase_ + kOut2SawPhaseOffset,
+                                                frame.phase_increment,
+                                                frame.phase_inc_recip_q24);
 
   if (frame.alt) {
     // Low Y increases hold length so waveform-family decisions persist across

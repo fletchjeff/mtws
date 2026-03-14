@@ -2,26 +2,25 @@
 
 namespace {
 constexpr int32_t kUnityQ12 = 4096;
-// The 5-voice side-voice map is derived by averaging adjacent pairs from the
-// checked-in 7-voice table. This preserves the left/right detune asymmetry while
-// removing the outermost side voice on each side.
+// Detune offsets for the shared 7-voice spread. These match the integrated
+// engine so standalone voicing and `mtws` slot voicing stay identical.
 constexpr int32_t kDetuneOffsetQ16[SawsomeSoloEngine::kNumVoices] = {
-    -3145, -1640, 0, 1825, 3080,
+    -3920, -2370, -910, 0, 1040, 2610, 3550,
 };
 // Stereo pan positions (-1..+1 in Q12) for each voice.
 constexpr int32_t kPanQ12[SawsomeSoloEngine::kNumVoices] = {
-    -3072, -1844, 0, 1844, 3072,
+    -3686, -2458, -1229, 0, 1229, 2458, 3686,
 };
 // Voice gain taper that emphasizes center voice while preserving side energy.
 constexpr int32_t kGainQ12[SawsomeSoloEngine::kNumVoices] = {
-    2458, 3175, 4096, 3175, 2458,
+    2048, 2867, 3482, 4096, 3482, 2867, 2048,
 };
-// Center voice index in the symmetric 5-voice spread.
-constexpr uint8_t kCenterVoice = 2;
+// Center voice index in the symmetric 7-voice spread.
+constexpr uint8_t kCenterVoice = 3;
 // Sum of squared full-spread voice gains. Used as the reference for makeup gain.
-constexpr uint32_t kFullSpreadPowerQ24 = 49021994U;
+constexpr uint32_t kFullSpreadPowerQ24 = 65853850U;
 // Makeup gain ceiling in Q12. 2.0x is enough to recover nearly constant power
-// from center-only up to the 5-voice spread without letting gain run away.
+// from center-only up to the 7-voice spread without letting gain run away.
 constexpr uint32_t kMaxMakeupQ12 = 8192U;
 
 // Converts 0..4095 control values into Q12 interpolation range 0..4096.
@@ -73,7 +72,7 @@ void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& contro
   out.alt = control.alt;
 
   // Fade side voices in with detune so full CCW collapses to the center voice,
-  // while full CW restores the 5-voice gain distribution.
+  // while full CW restores the full 7-voice gain distribution.
   uint32_t active_power_q24 = 0;
   for (uint8_t i = 0; i < kNumVoices; ++i) {
     uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
@@ -103,10 +102,11 @@ void SawsomeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& contro
     uint64_t inc = (uint64_t(control.pitch_inc) * uint32_t(ratio_q16)) >> 16;
     if (inc > 0x7FFFFFFFULL) inc = 0x7FFFFFFFULL;
     out.phase_increment[i] = uint32_t(inc);
+    out.phase_inc_recip_q24[i] = (inc > 0U) ? uint32_t((1ULL << 36) / inc) : 0U;
 
-    // Pan law: width scales fixed voice pan positions, then convert to L/R gains.
-    // The side-voice coordinates sit midway between the former 7-voice table
-    // entries so the 5-voice version keeps a familiar spread shape.
+    // Pan law: width scales fixed voice pan positions, then converts them to
+    // left/right gains. Keeping the exact shared pan table means the solo
+    // engine and the integrated engine keep the same stereo image.
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
     int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
     int32_t gain_l = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 - pan_q12)) >> 13);
@@ -126,14 +126,15 @@ int32_t SawsomeSoloEngine::Clamp12(int32_t v) {
 }
 
 // Generates a saw and applies PolyBLEP correction at discontinuity regions.
-// `phase_inc` controls correction width so higher pitches smooth wider in phase.
-int32_t SawsomeSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
+// The precomputed reciprocal keeps the standalone audio path in sync with the
+// integrated engine's lower-cost multiply-based BLEP math.
+int32_t SawsomeSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24) {
   int32_t saw = int32_t((phase >> 20) & 0x0FFFU) - 2048;
   if (phase_inc == 0U) return saw;
 
   if (phase < phase_inc) {
     // Leading-edge correction.
-    uint32_t t_q12 = uint32_t((uint64_t(phase) << 12) / phase_inc);
+    uint32_t t_q12 = uint32_t((uint64_t(phase) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = x + x - int32_t((int64_t(x) * x) >> 12) - 4096;
     saw -= corr >> 1;
@@ -142,7 +143,7 @@ int32_t SawsomeSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
   uint32_t tail = 0xFFFFFFFFU - phase;
   if (tail < phase_inc) {
     // Trailing-edge correction.
-    uint32_t t_q12 = uint32_t((uint64_t(tail) << 12) / phase_inc);
+    uint32_t t_q12 = uint32_t((uint64_t(tail) * recip_q24) >> 24);
     int32_t x = int32_t(t_q12);
     int32_t corr = int32_t((int64_t(x) * x) >> 12);
     saw += corr >> 1;
@@ -152,22 +153,22 @@ int32_t SawsomeSoloEngine::PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc) {
 }
 
 // Triangle is synthesized by leaky integration of the band-limited saw.
-int32_t SawsomeSoloEngine::PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc) {
-  int32_t saw = PolyBlepSawQ12(phase, phase_inc);
+int32_t SawsomeSoloEngine::PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc, uint32_t recip_q24) {
+  int32_t saw = PolyBlepSawQ12(phase, phase_inc, recip_q24);
   tri_state_[voice_index] += saw;
   tri_state_[voice_index] -= tri_state_[voice_index] >> 11;
   return Clamp12(tri_state_[voice_index] >> 5);
 }
 
-// Renders and sums all five voices, then applies final output clamp.
+// Renders and sums all seven voices, then applies final output clamp.
 void SawsomeSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2) {
   int32_t sum_l = 0;
   int32_t sum_r = 0;
 
   for (uint8_t i = 0; i < kNumVoices; ++i) {
     phases_[i] += frame.phase_increment[i];
-    int32_t s = frame.alt ? PolyBlepTriangleQ12(i, phases_[i], frame.phase_increment[i])
-                          : PolyBlepSawQ12(phases_[i], frame.phase_increment[i]);
+    int32_t s = frame.alt ? PolyBlepTriangleQ12(i, phases_[i], frame.phase_increment[i], frame.phase_inc_recip_q24[i])
+                          : PolyBlepSawQ12(phases_[i], frame.phase_increment[i], frame.phase_inc_recip_q24[i]);
     sum_l += int32_t((int64_t(s) * frame.gain_l_q12[i]) >> 12);
     sum_r += int32_t((int64_t(s) * frame.gain_r_q12[i]) >> 12);
   }

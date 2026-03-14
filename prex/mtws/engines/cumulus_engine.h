@@ -5,13 +5,21 @@
 
 namespace mtws {
 
+// CumulusEngine is a 16-partial additive voice with centroid-driven spectral
+// shaping. Control-rate code prepares per-partial increments and gains, while
+// audio-rate code only performs LUT reads and fixed-point accumulation.
 class CumulusEngine : public EngineInterface {
  public:
+  // Creates the engine with the shared sine LUT dependency.
   explicit CumulusEngine(SineLUT* lut);
 
+  // Resets all partial phases and smoothed control state.
   void Init() override;
+  // Keeps phase continuity when the slot is reselected.
   void OnSelected() override;
+  // Builds one control frame containing per-partial frequencies and gains.
   void ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) override;
+  // Renders one stereo sample in the signed 12-bit output domain.
   void RenderSample(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) override;
 
  private:
@@ -26,8 +34,10 @@ class CumulusEngine : public EngineInterface {
   static constexpr uint32_t kCumulusMasterGainQ12 = 32768U;  // Master makeup target, auto-capped per frame.
   static constexpr uint32_t kUniformPartialGainQ12 = 8192U;   // Uniform per-partial gain (2x).
 
+  // Harmonic ratio helper: partial `i` maps to `(i + 1)` in Q16.
   inline int32_t HarmonicRatioQ16(int i) const { return int32_t((i + 1) << 16); }
 
+  // Centroid shape helpers and smoothing utilities used during ControlTick.
   static int32_t CentroidBaseGainQ12(int partial_index, uint32_t centroid_q12);
   static int32_t CentroidNarrowGainQ12(int partial_index, uint32_t centroid_q12);
   static int32_t LerpQ12(int32_t a, int32_t b, uint32_t t_q12);
@@ -35,8 +45,11 @@ class CumulusEngine : public EngineInterface {
   static int32_t FoldReflectQ16(int32_t x, int32_t lo, int32_t hi);
   static int32_t ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y);
 
+  // Shared sine lookup table owned by the host app.
   SineLUT* lut_;
+  // Per-partial oscillator phases in 0.32 units.
   uint32_t phases_[kNumCumulusVoices];
+  // Smoothed per-partial ratio and gain state published across control frames.
   int32_t smoothed_ratio_q16_[kNumCumulusVoices];
   int32_t smoothed_gain_q12_[kNumCumulusVoices];
 };

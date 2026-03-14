@@ -223,17 +223,18 @@ The integrated build uses these six engines:
 
 ### 2. bender
 
-- Waveshaping oscillator with fold mode and ramp-morph Alt mode.
-- `X`: fold amount in Normal, morph amount in Alt.
-- `Y`: bias in Normal, Out2 phase shift in Alt.
+- Waveshaping oscillator that compares fold and crush routings.
+- `X`: fold drive and fold wet mix.
+- `Y`: crush amount.
+- `Alt`: reorders the fold/crush stages.
 - More detail: [engines/bender.md](engines/bender.md)
 
 ### 3. floatable
 
-- Stereo wavetable oscillator with independent Out1 and Out2 table positions.
+- Stereo wavetable oscillator with independent Out1 and Out2 morph positions.
 - `X`: Out1 wavetable position.
 - `Y`: Out2 wavetable position.
-- `Alt`: switches to the alternate bank pair.
+- `Alt`: switches to the alternate source bank.
 - More detail: [engines/floatable.md](engines/floatable.md)
 
 ### 4. cumulus
@@ -246,18 +247,18 @@ The integrated build uses these six engines:
 
 ### 5. losenge
 
-- Dual-formant vowel-style synth slot.
-- `X`: Out1 formant morph.
-- `Y`: Out2 formant morph.
-- `Alt`: alternate carrier and vowel set.
+- Formant vowel oscillator with mirrored stereo vowel motion.
+- `X`: vowel path position.
+- `Y`: shared tract/formant shift.
+- `Alt`: brighter upper-formant set.
 - More detail: [engines/losenge.md](engines/losenge.md)
 
 ### 6. din_sum
 
-- Noise-based split-filter slot.
-- `X`: damping / Q behavior.
-- `Y`: filter distance from center.
-- `Alt`: alternate noise source and filter topology.
+- Stochastic sine-to-saw morph slot.
+- `X`: morph position / saw probability.
+- `Y`: coherence / cycle hold behavior.
+- `Alt`: cycle-locked probabilistic mode.
 - More detail: [engines/din_sum.md](engines/din_sum.md)
 
 ## Current Limitations And Caveats

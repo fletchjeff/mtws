@@ -204,7 +204,7 @@ void CumulusSoloEngine::RenderSample(const RenderFrame& frame, int32_t& out1, in
   for (int i = 0; i < 16; ++i) {
     phases_[i] += frame.voice_phase_increment[i];
     int32_t s = lut_->LookupLinear(phases_[i]);
-    int32_t voice = int32_t((int64_t(s) * frame.voice_gain_q12[i]) >> 12);
+    int32_t voice = (s * frame.voice_gain_q12[i]) >> 12;
 
     if ((i & 1) == 0) {
       sum_odd += voice;

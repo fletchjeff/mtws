@@ -74,7 +74,7 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   out.alt = global.mode_alt;
 
   // Fade side voices in with detune so full CCW collapses toward the center
-  // oscillator while full CW restores the 5-voice spread.
+  // oscillator while full CW restores the full 7-voice spread.
   uint32_t active_power_q24 = 0;
   for (uint8_t i = 0; i < kNumSawsomeVoices; ++i) {
     uint32_t voice_gain_q12 = uint32_t(kGainQ12[i]);
@@ -105,9 +105,9 @@ void SawsomeEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
     out.voice_phase_increment[i] = uint32_t(inc);
     out.voice_phase_inc_recip_q24[i] = (inc > 0) ? uint32_t((1ULL << 36) / inc) : 0U;
 
-    // The new 5-voice map places each side voice halfway between its former
-    // neighboring 7-voice positions so the spread keeps the prior asymmetry
-    // while dropping one side voice per channel.
+    // Width scales the shared 7-voice pan table before it is converted into
+    // left/right gains, so the standalone and integrated engines keep the same
+    // stereo image.
     int32_t pan_q12 = int32_t((int64_t(kPanQ12[i]) * int32_t(width_q12)) >> 12);
     int32_t voice_gain_q12 = int32_t((uint64_t(active_gain_q12[i]) * makeup_q12 + 2048U) >> 12);
     int32_t gain_l_q12 = int32_t((int64_t(voice_gain_q12) * (kUnityQ12 - pan_q12)) >> 13);

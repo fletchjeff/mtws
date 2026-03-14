@@ -31,16 +31,16 @@ constexpr VowelAnchor kMaleAnchors[kNumVowelAnchors] = {
     {{415U, 1400U, 2200U}, {4096U, 1028U, 648U}},   // U
 };
 
-// Female anchor path inferred from the male table using average published
-// female/male formant ratios. F1 is scaled by ~1.17, F2 by ~1.18, and F3 by
-// ~1.15 so alt mode shifts into a female vocal range while preserving the same
-// vowel geometry and relative formant balance.
-constexpr VowelAnchor kFemaleAnchors[kNumVowelAnchors] = {
-    {{713U, 1180U, 2818U}, {4096U, 2052U, 1028U}},  // A
-    {{468U, 2006U, 2645U}, {4096U, 1454U, 1630U}},  // E
-    {{278U, 2054U, 2818U}, {4096U, 410U, 648U}},    // IY
-    {{380U, 826U, 2932U}, {4096U, 1028U, 205U}},    // O
-    {{486U, 1652U, 2530U}, {4096U, 1028U, 648U}},   // U
+// Alt-mode anchor path using the male F2/F3/F4 formants instead of F1/F2/F3.
+// Dropping F1 removes the low-frequency chest of the vowel, producing a
+// brighter and more metallic character while preserving the primary vowel cue
+// carried by the F2/F3 relationship.
+constexpr VowelAnchor kUpperAnchors[kNumVowelAnchors] = {
+    {{1000U, 2450U, 3300U}, {4096U, 2052U, 1028U}},  // A
+    {{1700U, 2300U, 3500U}, {4096U, 1454U, 1028U}},  // E
+    {{1741U, 2450U, 3300U}, {4096U, 410U, 410U}},    // IY
+    {{700U, 2550U, 3400U}, {4096U, 1028U, 205U}},    // O
+    {{1400U, 2200U, 3300U}, {4096U, 1028U, 410U}},   // U
 };
 
 // Interpolates across a path of vowel anchors. X spans the full path from the
@@ -94,11 +94,11 @@ int32_t LosengeSoloEngine::Clamp12(int32_t v) {
 
 // Converts Hz into a 0.32 phase increment for a 48kHz sample rate.
 // In plain language: one second of phase travel is 2^32 units, so the per-sample
-// step is hz / 48000 of that full cycle. Rounding keeps low formants stable.
-// Alternative considered: a reciprocal LUT for speed, but control-rate 64-bit math
-// is cheaper in memory and already out of the audio hot path.
+// step is hz / 48000 of that full cycle. This uses the integrated engine's
+// constant reciprocal multiply instead of a divide, which keeps solo and mtws
+// formant tuning matched while avoiding a slower 64-bit division.
 uint32_t LosengeSoloEngine::HzToPhaseIncrement(uint32_t hz) {
-  return uint32_t((uint64_t(hz) << 32) / 48000ULL);
+  return uint32_t(uint64_t(hz) * 89478ULL);
 }
 
 // Applies a Q12 tract-size shift to a formant frequency in Hz.
@@ -137,15 +137,15 @@ int32_t LosengeSoloEngine::MixFormantsQ12(int32_t f1,
 // Main sets pitch, X navigates named vowel anchors for Out1, Out2 uses the
 // inverse path position so the channels move oppositely without wrapping, Y
 // applies a global formant shift around a neutral center, and alt switches to
-// the female anchor set.
+// the brighter upper F2/F3/F4 anchor set.
 void LosengeSoloEngine::BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const {
   out.phase_increment = control.pitch_inc;
 
   const uint16_t x_q12 = ToQ12(control.macro_x);
   const uint16_t out2_x_q12 = uint16_t(4096U - x_q12);
-  const VowelAnchor out1_vowel = control.alt ? InterpolateVowelPath(kFemaleAnchors, x_q12)
+  const VowelAnchor out1_vowel = control.alt ? InterpolateVowelPath(kUpperAnchors, x_q12)
                                              : InterpolateVowelPath(kMaleAnchors, x_q12);
-  const VowelAnchor out2_vowel = control.alt ? InterpolateVowelPath(kFemaleAnchors, out2_x_q12)
+  const VowelAnchor out2_vowel = control.alt ? InterpolateVowelPath(kUpperAnchors, out2_x_q12)
                                              : InterpolateVowelPath(kMaleAnchors, out2_x_q12);
 
   // Y is centered at 1.0x shift so the middle position sounds neutral. Full CCW

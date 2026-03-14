@@ -27,6 +27,13 @@ inline uint16_t FoldDriveQ7FromMacroX(uint16_t macro_x) {
 inline int16_t CrushAmountFromMacroY(uint16_t macro_y) {
   return int16_t((uint32_t(macro_y) * uint32_t(macro_y)) >> 12);
 }
+
+// Wraps a signed value into the range 0..8191 using a bitmask instead of
+// modulo. The 8192-sample fold period is a power of two, so this is equivalent
+// to the original modulo form while matching the faster integrated engine path.
+inline int32_t WrapMod8192(int32_t v) {
+  return v & 0x1FFF;
+}
 }  // namespace
 
 // Stores LUT dependency and initializes oscillator and fold-state history.
@@ -70,8 +77,7 @@ int32_t BenderSoloEngine::Clamp12(int32_t v) {
 // Utility-Pair fold transfer function. Values within +/-2048 pass through,
 // while larger magnitudes are reflected every 4096 samples.
 int32_t BenderSoloEngine::FoldFunction(int32_t x) {
-  int32_t period = 8192;
-  x = ((x + 2048) % period + period) % period;
+  x = WrapMod8192(x + 2048);
 
   if (x < 4096) {
     return x - 2048;
@@ -83,8 +89,7 @@ int32_t BenderSoloEngine::FoldFunction(int32_t x) {
 // This follows the Utility-Pair implementation directly so the folded sine uses
 // the same transfer curve and the same antialiasing strategy.
 int32_t BenderSoloEngine::FoldIntegral(int32_t x) {
-  int32_t period = 8192;
-  x = ((x + 2048) % period + period) % period;
+  x = WrapMod8192(x + 2048);
   int32_t x2 = x * 2;
   if (x < 4096) {
     return ((x2 + 1) * (x2 - 8191)) >> 3;
@@ -110,10 +115,14 @@ int32_t BenderSoloEngine::AntiAliasedFold(int32_t x, int32_t& last_integral, int
 
 // Utility-Pair bitcrusher transfer. `amount` is the quantizer step size in the
 // signed 12-bit sample domain, so larger values produce fewer output levels.
+// This uses floored division instead of two modulo operations, which keeps the
+// output identical while matching the faster integrated implementation.
 int32_t BenderSoloEngine::CrushFunction(int32_t x, int32_t amount) {
   if (amount < 1) amount = 1;
   x += -2047 + (amount >> 1);
-  x = x - (((x % amount) + amount) % amount) + 2047;
+  int32_t q = x / amount;
+  if (x < 0 && (q * amount != x)) q -= 1;
+  x = q * amount + 2047;
   if (x < -2047) x = -2047;
   if (x > 2047) x = 2047;
   return x;

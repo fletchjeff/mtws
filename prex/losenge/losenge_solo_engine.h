@@ -3,9 +3,10 @@
 #include "prex/mtws/dsp/sine_lut.h"
 #include "prex/solo_common/solo_control_router.h"
 
-// LosengeSoloEngine is a stripped-down formant oscillator inspired by the
-// Braids/Twists VOWL model. A pitched carrier resets three independent formant
-// oscillators, and their weighted sum is sent identically to both outputs.
+// LosengeSoloEngine is a pitched formant-oscillator bank inspired by the
+// Braids/Twists VOWL model. One hidden carrier resets two independent
+// three-formant output banks once per cycle, matching the current integrated
+// `mtws` engine behavior.
 class LosengeSoloEngine {
  public:
   // Control-rate frame consumed by RenderSample.
@@ -25,7 +26,9 @@ class LosengeSoloEngine {
 
   // Resets carrier phase and all formant oscillator phases.
   void Init();
-  // Converts controls into pitch, vowel interpolation, and formant shift.
+  // Converts controls into pitch, vowel interpolation, and a shared tract-size
+  // shift. Alt mode swaps from the base F1/F2/F3 formant set to a brighter
+  // upper F2/F3/F4 set.
   void BuildRenderFrame(const solo_common::ControlFrame& control, RenderFrame& out) const;
   // Renders one stereo sample in signed 12-bit output domain.
   void RenderSample(const RenderFrame& frame, int32_t& out1, int32_t& out2);
@@ -34,6 +37,7 @@ class LosengeSoloEngine {
   // Clamps to signed 12-bit board output domain.
   static int32_t Clamp12(int32_t v);
   // Converts formant frequency in Hz to 0.32 phase increment at 48kHz.
+  // Uses the same constant-multiply approximation as the integrated engine.
   static uint32_t HzToPhaseIncrement(uint32_t hz);
   // Applies a Q12 global tract/formant shift to a base formant frequency in Hz.
   static uint32_t ApplyShiftQ12(uint16_t hz, uint16_t shift_q12);

@@ -2,8 +2,6 @@
 #include "pico.h"
 
 #include "prex/mtws/wavetables/floatable_bank_1_16x256.h"
-#include "prex/mtws/wavetables/floatable_bank_2_16x256.h"
-#include "prex/mtws/wavetables/floatable_bank_3_16x256.h"
 #include "prex/mtws/wavetables/floatable_bank_4_16x256.h"
 
 namespace mtws {

@@ -1,41 +1,41 @@
 # floatable
 
 ## Goal + Sonic Intent
-Stereo wavetable oscillator with one curated wavetable lane per output and a
-bank-pair switch in Alt mode.
+Stereo wavetable oscillator with one curated source bank per mode and
+independent Out1/Out2 morph positions inside that shared timbral space.
 
 ## Control Map
 - Main: pitch (10Hz..10kHz)
-- X: wavetable position inside the current Out1 bank (or AudioIn1 attenuator)
-- Y: wavetable position inside the current Out2 bank (or AudioIn2 attenuator)
+- X: Out1 wavetable position inside the active source bank (or AudioIn1 attenuator)
+- Y: Out2 wavetable position inside the active source bank (or AudioIn2 attenuator)
 - Z Up: Alt bank select
 - Z Middle: Normal bank select
 - Z Down: ignored in standalone
-- Out1: rendered output from the selected Out1 bank
-- Out2: rendered output from the selected Out2 bank
+- Out1: morph point chosen by X
+- Out2: morph point chosen by Y
 
 ## DSP Block Diagram
-- Control: choose the active bank pair, then render one finished 256-sample table for Out1 from X and one finished 256-sample table for Out2 from Y
-- Audio: phase-interpolate each rendered 256-sample table at the current oscillator phase
-- Normal: Out1 <- bank 1, Out2 <- bank 2
-- Alt: Out1 <- bank 3, Out2 <- bank 4
+- Control: choose the active source bank, then compute a source-wave index + Q12 fraction for X and Y
+- Audio: phase-interpolate inside two adjacent source waves, then morph between those waves for each output
+- Normal: both outputs read from curated bank 1
+- Alt: both outputs read from curated bank 4
 
 ## CPU-Risk Points
-- Rebuilding two 256-sample rendered tables every control tick
-- Shared control frame is larger because it carries both rendered tables
-- High-frequency aliasing from bright waves
+- Two-stage interpolation on both outputs every sample
+- Bright waves can still alias at high pitch
 
 ## Milestone Steps
-1. Hardware-check the new curated bank order in both standalone and integrated builds.
-2. Reorder waves only if X or Y sweeps expose weak transitions inside a bank.
-3. Reintroduce optional anti-alias table strategy later only if the final bank set needs it.
+1. Hardware-check the current curated bank order in both standalone and integrated builds.
+2. Reorder waves only if X or Y sweeps expose weak transitions inside the bank.
+3. Reintroduce an alternate anti-alias strategy only if the current direct-source approach proves too bright at extreme pitches.
 
 ## Hardware Test Checklist
-- Check smooth X movement across the full Out1 bank and Y movement across the full Out2 bank.
+- Check smooth X movement across the full Out1 path and Y movement across the full Out2 path.
 - Confirm Alt switches bank audibly.
-- Verify the normal pair and alt pair both have useful stereo contrast.
-- Sweep slowly through all 16 waves in each bank and listen for boundary clicks or weak order choices.
+- Verify the two outputs remain meaningfully different even though they share the same active bank.
+- Sweep slowly through all 16 waves in each active bank and listen for boundary clicks or weak order choices.
 
 ## Implementation Notes
 - Integrated `mtws` and the standalone `floatable` target now share the same four curated `16 x 256` bank headers in [prex/mtws/wavetables](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables).
-- Both builds now render two finished `256`-sample output tables at control rate and only phase-read those finished tables at audio rate; see [floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp).
+- Both builds now use the same compact morph-state approach and render directly from source waves at audio rate; see [floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp).
+- The current curated mapping uses bank 1 in Normal and bank 4 in Alt. Banks 2 and 3 remain available in the repo but are not currently active in the engine.

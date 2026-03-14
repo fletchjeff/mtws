@@ -3,17 +3,22 @@
 #include "prex/mtws/dsp/sine_lut.h"
 #include "prex/solo_common/solo_control_router.h"
 
-// SawsomeSoloEngine is a 5-voice supersaw/supertriangle oscillator with
-// fixed per-voice detune and stereo panning. It uses PolyBLEP correction to
-// reduce aliasing around waveform discontinuities.
+// SawsomeSoloEngine is a 7-voice supersaw/supertriangle oscillator with fixed
+// per-voice detune and stereo panning. It uses PolyBLEP correction to reduce
+// aliasing around waveform discontinuities, matching the integrated `mtws`
+// engine behavior.
 class SawsomeSoloEngine {
  public:
-  static constexpr uint8_t kNumVoices = 5;
+  static constexpr uint8_t kNumVoices = 7;
 
   // Per-block voice parameters consumed by audio rendering.
   struct RenderFrame {
     // Per-voice oscillator increments in 0.32 phase units/sample.
     uint32_t phase_increment[kNumVoices];
+    // Precomputed PolyBLEP reciprocals: `(1 << 36) / phase_increment`.
+    // These are prepared at control rate so the audio path can replace
+    // divisions with multiplies during BLEP edge correction.
+    uint32_t phase_inc_recip_q24[kNumVoices];
     // Per-voice left gain in Q12 after detune-dependent voice scaling.
     int16_t gain_l_q12[kNumVoices];
     // Per-voice right gain in Q12 after detune-dependent voice scaling.
@@ -36,9 +41,9 @@ class SawsomeSoloEngine {
   // Clamps to signed 12-bit output domain.
   static int32_t Clamp12(int32_t v);
   // Band-limited saw oscillator using PolyBLEP edge correction.
-  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc);
+  static int32_t PolyBlepSawQ12(uint32_t phase, uint32_t phase_inc, uint32_t recip_q24);
   // Integrates band-limited saw into triangle for one voice.
-  int32_t PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc);
+  int32_t PolyBlepTriangleQ12(int voice_index, uint32_t phase, uint32_t phase_inc, uint32_t recip_q24);
 
   // Kept for API consistency with other solo engines.
   mtws::SineLUT* lut_;

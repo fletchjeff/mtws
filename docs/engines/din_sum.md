@@ -1,33 +1,35 @@
 # din_sum
 
 ## Goal + Sonic Intent
-Filtered-noise oscillator scaffold with pitch-centered split filters and mode-dependent topology.
+Bounded sine-to-saw morph oscillator with stochastic instability in Normal mode
+and cycle-locked probabilistic waveform selection in Alt mode.
 
 ## Control Map
-- Main: pitch reference (10Hz..10kHz)
-- X: shared filter Q/damping (or AudioIn1 attenuator)
-- Y: distance from center frequency (or AudioIn2 attenuator)
-- Z Up: Alt (blue noise! source + HP/LP split)
-- Z Middle: Normal (white source + BP/BP split)
+- Main: pitch (10Hz..10kHz)
+- X: shared sine-to-saw morph position / saw probability (or AudioIn1 attenuator)
+- Y: random-source coherence in Normal / cycle hold stickiness in Alt (or AudioIn2 attenuator)
+- Z Up: Alt (cycle-locked probabilistic mode)
+- Z Middle: Normal (bounded random morph mode)
 - Z Down: ignored in standalone
-- Out1: filter path 1
-- Out2: filter path 2
+- Out1: sine-to-local-saw morph
+- Out2: sine-to-90-degree-shifted-saw morph
 
 ## DSP Block Diagram
-- Noise source (white or pink-ish)
-- Normal: two SVF bandpass filters at low/high offsets
-- Alt: SVF highpass + SVF lowpass
+- Shared sources: sine LUT oscillator plus two PolyBLEP saw targets
+- Normal: X sets the center morph position; Y crossfades between smooth low-passed and nervous high-passed random modulation inside a bounded corridor
+- Alt: each phase wrap chooses sine or saw for the whole cycle, independently per output, with X setting the saw probability and Y setting hold length
 
 ## CPU-Risk Points
-- Multiple SVF updates per sample
-- Noise generation + filter state updates at audio rate
+- Two PolyBLEP saw evaluations per sample
+- Audio-rate interpolation of the random corridor inside each 16-sample control block
+- Alt-mode wrap detection and independent cycle rerolls
 
 ## Milestone Steps
-1. Tune bandwidth response vs X for stable musical range.
-2. Tune center-distance response vs Y.
-3. Improve pink-noise approximation if needed.
+1. Tune the coherence curve so the center region stays lively without losing pitch.
+2. Check that the 90-degree Out2 saw offset still gives the best mono behavior.
+3. Add additional morph targets later only if the current sine/saw contrast feels too narrow.
 
 ## Hardware Test Checklist
-- Confirm overlap->split behavior across Y sweep.
-- Confirm Alt HP/LP separation.
-- Check for filter instability at extreme settings.
+- Confirm X reaches exact pure-sine and pure-saw endpoints.
+- Confirm Y smoothly moves from stable to nervous behavior in Normal mode.
+- Confirm Alt holds waveform choices longer at low Y and rerolls quickly at high Y.

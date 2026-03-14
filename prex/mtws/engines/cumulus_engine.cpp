@@ -3,10 +3,13 @@
 
 namespace mtws {
 
+// Creates the additive engine and initializes the per-partial phase and
+// smoothing state used by both control-rate and audio-rate code.
 CumulusEngine::CumulusEngine(SineLUT* lut) : lut_(lut) {
   Init();
 }
 
+// Resets all partial phases and smoothing memory to the default harmonic stack.
 void CumulusEngine::Init() {
   for (int i = 0; i < kNumCumulusVoices; ++i) {
     phases_[i] = 0;
@@ -19,6 +22,8 @@ void CumulusEngine::OnSelected() {
   // Keep phase continuity to avoid clicks when re-entering this engine.
 }
 
+// Broad centroid weighting where gain falls as 1 / (1 + distance) across the
+// partial index domain.
 int32_t CumulusEngine::CentroidBaseGainQ12(int partial_index, uint32_t centroid_q12) {
   uint32_t pos_q12 = uint32_t(partial_index) << 12;
   uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
@@ -27,6 +32,8 @@ int32_t CumulusEngine::CentroidBaseGainQ12(int partial_index, uint32_t centroid_
   return int32_t((numer + (denom_q12 >> 1)) / denom_q12);
 }
 
+// Narrow centroid weighting where only the nearest neighboring partials remain
+// active, giving a pointier spectrum at lower Y positions.
 int32_t CumulusEngine::CentroidNarrowGainQ12(int partial_index, uint32_t centroid_q12) {
   uint32_t pos_q12 = uint32_t(partial_index) << 12;
   uint32_t d_q12 = (pos_q12 >= centroid_q12) ? (pos_q12 - centroid_q12) : (centroid_q12 - pos_q12);
@@ -34,11 +41,15 @@ int32_t CumulusEngine::CentroidNarrowGainQ12(int partial_index, uint32_t centroi
   return int32_t(kUnityQ12 - d_q12);
 }
 
+// Fixed-point linear interpolation helper where `t_q12 = 0` returns `a` and
+// `t_q12 = 4096` returns `b`.
 int32_t CumulusEngine::LerpQ12(int32_t a, int32_t b, uint32_t t_q12) {
   if (t_q12 > kUnityQ12) t_q12 = kUnityQ12;
   return int32_t((int64_t(a) * int32_t(kUnityQ12 - t_q12) + int64_t(b) * int32_t(t_q12)) >> 12);
 }
 
+// Integer one-pole smoother used to keep ratio and gain changes free of zipper
+// noise without adding per-partial buffers.
 int32_t CumulusEngine::SmoothToward(int32_t current, int32_t target, int shift) {
   if (shift <= 0) return target;
   int32_t delta = target - current;
@@ -49,6 +60,8 @@ int32_t CumulusEngine::SmoothToward(int32_t current, int32_t target, int shift) 
   return current + step;
 }
 
+// Reflect-folds a warped ratio into the legal Q16 ratio range so the alt-mode
+// attract/repel motion stays continuous instead of hard-clipping at the edges.
 int32_t CumulusEngine::FoldReflectQ16(int32_t x, int32_t lo, int32_t hi) {
   int64_t span = int64_t(hi) - int64_t(lo);
   if (span <= 0) return lo;
@@ -59,6 +72,8 @@ int32_t CumulusEngine::FoldReflectQ16(int32_t x, int32_t lo, int32_t hi) {
   return int32_t(int64_t(lo) + t);
 }
 
+// Blends the narrow centroid shape, broad centroid shape, and a flat spectrum
+// as Y moves from fully counter-clockwise to fully clockwise.
 int32_t CumulusEngine::ShapedCentroidGainQ12(int partial_index, uint32_t centroid_q12, uint32_t knob_y) {
   if (knob_y > 4095U) knob_y = 4095U;
 
@@ -75,6 +90,9 @@ int32_t CumulusEngine::ShapedCentroidGainQ12(int partial_index, uint32_t centroi
   return LerpQ12(g_base, int32_t(kUnityQ12), t_q12);
 }
 
+// Builds one additive control frame. X moves the spectral centroid, Y controls
+// shape in normal mode and ratio attract/repel in alt mode, and the control
+// path also computes a conservative bus normalization gain for the next block.
 void CumulusEngine::ControlTick(const GlobalControlFrame& global, EngineControlFrame& frame) {
   CumulusControlFrame& out = frame.cumulus;
 
@@ -174,6 +192,8 @@ void CumulusEngine::ControlTick(const GlobalControlFrame& global, EngineControlF
   out.mix_norm_q12 = int32_t(safe_mix_norm_q12);
 }
 
+// Renders the 16 sine partials, routes even and odd indices to separate
+// stereo buses, then applies the per-frame normalization gain and 12-bit clamp.
 void __not_in_flash_func(CumulusEngine::RenderSample)(const EngineControlFrame& frame, int32_t& out1, int32_t& out2) {
   const CumulusControlFrame& in = frame.cumulus;
 
