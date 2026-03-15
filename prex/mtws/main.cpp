@@ -16,7 +16,7 @@ namespace mtws {
 
 namespace {
 constexpr int32_t kUnityQ12 = 4096;
-constexpr int kVCAGainSmoothShift = 4;
+constexpr int kVCAGainSmoothShift = 6;
 
 // Maps MIDI CC74 from 0..127 into the ComputerCard bipolar CV code range.
 // The endpoints intentionally use the full raw code span so the output is
@@ -26,9 +26,9 @@ inline int16_t __not_in_flash_func(MapCC74ToCV2Code)(uint8_t cc74_value) {
 }
 
 // Slews one Q12 gain toward its latest target with a tiny integer one-pole
-// step. `shift = 4` means each sample moves by roughly 1/16 of the remaining
-// error, which was chosen as a low-cost compromise between click suppression
-// and keeping CV2 envelopes responsive.
+// step. `shift = 6` means each sample moves by roughly 1/64 of the remaining
+// error, which lengthens the fixed CV2 fade enough to better suppress
+// gate-driven clicks while keeping the path lightweight and responsive.
 inline int32_t __not_in_flash_func(SmoothToward)(int32_t current, int32_t target, int shift) {
   if (shift <= 0) return target;
   int32_t delta = target - current;
