@@ -39,7 +39,7 @@ The integrated build currently uses this slot order:
 
 Current behavior notes:
 
-- The current code powers up on slot `6`, `din_sum`.
+- The current code powers up on slot `1`, `sawsome`.
 - Slot changes are immediate hard cuts in the current build.
 - You can advance slots from the `Z` switch or from `Pulse2 input`.
 

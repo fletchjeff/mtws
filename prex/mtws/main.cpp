@@ -97,7 +97,7 @@ class MTWSApp : public ComputerCard {
         switch_stable_count_(0),
         pulse2_high_prev_(false),
         panel_alt_latched_(false),
-        selected_slot_(5),
+        selected_slot_(0),
         z_switch_hold_active_(false),
         z_switch_slot_armed_(false),
         z_switch_clock_edit_active_(false),
