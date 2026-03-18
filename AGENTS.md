@@ -4,27 +4,27 @@
 This file is the single source of truth for agent behavior inside the `mtws` repo.
 
 ## IMPORTANT
-- This policy applies to work inside `mtws/`. Leave the workspace-root policy in place for wider multi-repo tasks.
 - Run git operations only in this repo when the task is about `mtws`.
 - Work in small increments and validate through the build/flash test loop.
 - Always provide a concrete change plan and get user approval before editing code.
 - All code written should be well commented. Every function should have an explanation of what it does and be descriptive about the inputs and outputs.
 
 ## Available Repo Skills
-- `mtws-oscillator-design` in `.codex/skills/mtws-oscillator-design/`: use when turning an oscillator idea into a concrete `mtws` spec before code edits.
-- `mtws-oscillator-solo` in `.codex/skills/mtws-oscillator-solo/`: use when creating or refactoring a standalone oscillator target under `prex/<engine>/`.
-- `mtws-oscillator-integration` in `.codex/skills/mtws-oscillator-integration/`: use when wiring an oscillator into the six-slot `mtws` host, registry, docs, and validation loop.
+- `mtws-oscillator-design` in `.ai/skills/mtws-oscillator-design/`: use when turning an oscillator idea into a concrete `mtws` spec before code edits.
+- `mtws-oscillator-solo` in `.ai/skills/mtws-oscillator-solo/`: use when creating or refactoring a standalone oscillator target under `knots/solo_engines/<engine>/`.
+- `mtws-oscillator-integration` in `.ai/skills/mtws-oscillator-integration/`: use when wiring an oscillator into the six-slot `mtws` host, registry, docs, and validation loop.
 
 ## Current Project Scope
 - Current user-facing behavior is documented in `docs/MTWS_USER_GUIDE.md`.
 - Engine-specific docs live in `docs/engines/`.
 
 ## Scope and Priorities
-- Active firmware work is in `prex/`.
+- Active firmware work is in `knots/`.
+- The integrated host lives in `knots/src/`.
+- Standalone solo engines live in `knots/solo_engines/`.
 - Shared user and engineering docs live in `docs/`.
-- Use `../Utility-Pair/` as a reference library for proven helpers and DSP patterns.
-- Use `../Workshop_Computer/` for documentation and examples lookup only unless explicitly asked to edit it.
-- Do not edit vendored or reference code such as `../pico-sdk/` or any `reference/` subtree unless explicitly requested.
+- Reference material (Utility-Pair helpers, Workshop Computer examples, 10 Twists) lives in `reference/`.
+- Do not edit vendored or reference code such as `../pico-sdk/` or `reference/` unless explicitly requested.
 
 ## RP2040 + ComputerCard Constraints
 - Audio callback rate is 48kHz; `ProcessSample()` budget is about 20.8us.
@@ -35,7 +35,7 @@ This file is the single source of truth for agent behavior inside the `mtws` rep
 - Do not run USB MIDI service (`tud_task()`) on the audio core path.
 
 ## Clock Policy
-- `prex/mtws/main.cpp` currently sets the RP2040 SYS clock to `200MHz` at startup using `vreg_set_voltage(VREG_VOLTAGE_1_15)` and `set_sys_clock_khz(200000, true)`.
+- `knots/src/main.cpp` currently sets the RP2040 SYS clock to `200MHz` at startup using `vreg_set_voltage(VREG_VOLTAGE_1_15)` and `set_sys_clock_khz(200000, true)`.
 - This increases CPU headroom only; it does not change the 48kHz audio sample rate or control scheduling constants by itself.
 - Treat clocks above 200MHz as experimental and require explicit user approval before enabling them.
 
@@ -53,7 +53,7 @@ This file is the single source of truth for agent behavior inside the `mtws` rep
 
 ## Helper-First Policy
 - Before adding new DSP or math helpers, check `AGENT_REFERENCE.md` first.
-- Prefer adapting proven helpers from `../Utility-Pair/src/` over inventing new ones.
+- Prefer adapting proven helpers from `reference/utility_pair/` over inventing new ones.
 - If not reusing a helper, explain why.
 - Keep ports minimal and preserve realtime safety.
 
@@ -77,20 +77,17 @@ Use this structure in technical change summaries:
 
 ## Project Structure
 This repo contains the active `mtws` firmware plus supporting tools and docs:
-- `prex/`: integrated and standalone firmware targets
+- `knots/src/`: integrated multi-engine host firmware
+- `knots/solo_engines/`: standalone solo engine targets and shared solo scaffolding
+- `reference/`: read-only reference material (Utility-Pair helpers, Workshop Computer examples, 10 Twists)
 - `docs/`: user guides, engine docs, plans, and optimization notes
 - `tools/`: host-side tools and utilities
-- `.codex/skills/`: repo-tracked skills for oscillator design and implementation
-
-Treat archived planning material outside this repo as optional historical context, not as a required dependency for normal `mtws` work.
+- `.ai/skills/`: repo-tracked skills for oscillator design and implementation
 
 Keep generated artifacts in `build/` directories and do not commit them.
 
 ## Build, Test, and Development Commands
 - `mkdir -p build && cd build && cmake .. && make -j`
-- `cd ../Utility-Pair && mkdir -p build && cd build && cmake .. && make -j`
-- `cd ../Workshop_Computer && npm ci --prefix tools/sitegen && npm run build --prefix tools/sitegen`
-- `cd ../Workshop_Computer && python .github/scripts/update-readme.py`
 
 ## Coding Style and Naming
 - Use C++17 for firmware projects.

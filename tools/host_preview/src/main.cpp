@@ -19,13 +19,13 @@
 #include <AudioToolbox/AudioToolbox.h>
 #endif
 
-#include "prex/bender/bender_solo_engine.h"
-#include "prex/cumulus/cumulus_solo_engine.h"
-#include "prex/din_sum/din_sum_solo_engine.h"
-#include "prex/floatable/floatable_solo_engine.h"
-#include "prex/losenge/losenge_solo_engine.h"
-#include "prex/sawsome/sawsome_solo_engine.h"
-#include "prex/solo_common/solo_control_router.h"
+#include "knots/solo_engines/bender/bender_solo_engine.h"
+#include "knots/solo_engines/cumulus/cumulus_solo_engine.h"
+#include "knots/solo_engines/din_sum/din_sum_solo_engine.h"
+#include "knots/solo_engines/floatable/floatable_solo_engine.h"
+#include "knots/solo_engines/losenge/losenge_solo_engine.h"
+#include "knots/solo_engines/sawsome/sawsome_solo_engine.h"
+#include "knots/solo_engines/solo_common/solo_control_router.h"
 
 namespace {
 

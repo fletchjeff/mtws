@@ -21,13 +21,13 @@ set(MTWS_ROOT ${CMAKE_CURRENT_LIST_DIR}/../..)
 
 add_executable(mtws_host_preview
   src/main.cpp
-  ${MTWS_ROOT}/prex/solo_common/solo_control_router.cpp
-  ${MTWS_ROOT}/prex/sawsome/sawsome_solo_engine.cpp
-  ${MTWS_ROOT}/prex/bender/bender_solo_engine.cpp
-  ${MTWS_ROOT}/prex/floatable/floatable_solo_engine.cpp
-  ${MTWS_ROOT}/prex/cumulus/cumulus_solo_engine.cpp
-  ${MTWS_ROOT}/prex/losenge/losenge_solo_engine.cpp
-  ${MTWS_ROOT}/prex/din_sum/din_sum_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/solo_common/solo_control_router.cpp
+  ${MTWS_ROOT}/knots/solo_engines/sawsome/sawsome_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/bender/bender_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/floatable/floatable_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/cumulus/cumulus_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/losenge/losenge_solo_engine.cpp
+  ${MTWS_ROOT}/knots/solo_engines/din_sum/din_sum_solo_engine.cpp
 )
 
 target_include_directories(mtws_host_preview PRIVATE

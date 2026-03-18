@@ -1,19 +1,87 @@
 MIT License
 
-Copyright (c) 2024-5 Chris Johnson
+Copyright (c) 2025-2026 Jeff Fletcher
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 
+--------------------------------------------------------------------------------
+Third-Party Notices
+--------------------------------------------------------------------------------
+
+This project includes or derives from the following third-party works.
 
 
+1. ComputerCard and Workshop Computer Examples
+   Source: https://github.com/TomWhitwell/Workshop_Computer
+   Files:  ComputerCard.h, reference/workshop_computer_examples/
+
+   MIT License
+   Copyright (c) 2024-2025 Chris Johnson
+
+   Permission is hereby granted, free of charge, to any person obtaining a
+   copy of this software and associated documentation files (the "Software"),
+   to deal in the Software without restriction, including without limitation
+   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+   and/or sell copies of the Software, and to permit persons to whom the
+   Software is furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included
+   in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT
+   OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR
+   THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
+2. Utility-Pair
+   Source: https://github.com/chrisgjohnson/Utility-Pair
+   Files:  reference/utility_pair/
 
-`midi_host` and `midi_device_host` examples use MIT-licensed code (`usb_midi_host.c`, `usb_midi_host.h` and `usb_midi_host_app_driver.c`) from https://github.com/rppicomidi/usb_midi_host
+   MIT License
+   Copyright (c) 2024-2025 Chris Johnson
 
-Copyright (c) 2023 rppicomidi
+   (Same MIT terms as above.)
+
+
+3. USB MIDI Host
+   Source: https://github.com/rppicomidi/usb_midi_host
+   Files:  reference/workshop_computer_examples/midi_host/usb_midi_host.*,
+           reference/workshop_computer_examples/midi_device_host/usb_midi_host.*
+
+   MIT License
+   Copyright (c) 2023 rppicomidi
+
+   (Same MIT terms as above.)
+
+
+4. Adventure Kid Waveforms (AKWF)
+   Source: https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE
+           https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/
+   Files:  tools/floatable_wavetable_browser/AKWF/,
+           knots/solo_engines/floatable/AKWF_60_ordered.wav
+
+   CC0 1.0 Universal (Public Domain Dedication)
+   To the extent possible under law, Kristoffer Ekstrand has waived all
+   copyright and related or neighboring rights to AKWF Waveforms.
+   https://creativecommons.org/publicdomain/zero/1.0/

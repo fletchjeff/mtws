@@ -36,6 +36,6 @@ independent Out1/Out2 morph positions inside that shared timbral space.
 - Sweep slowly through all 16 waves in each active bank and listen for boundary clicks or weak order choices.
 
 ## Implementation Notes
-- Integrated `mtws` and the standalone `floatable` target now share the same four curated `16 x 256` bank headers in [prex/mtws/wavetables](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/wavetables).
-- Both builds now use the same compact morph-state approach and render directly from source waves at audio rate; see [floatable_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/mtws/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](/Users/jeff/Toonbox/MTWS/mtws/prex/floatable/floatable_solo_engine.cpp).
+- Integrated `mtws` and the standalone `floatable` target now share the same four curated `16 x 256` bank headers in [knots/src/wavetables](knots/src/wavetables).
+- Both builds now use the same compact morph-state approach and render directly from source waves at audio rate; see [floatable_engine.cpp](knots/src/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](knots/solo_engines/floatable/floatable_solo_engine.cpp).
 - The current curated mapping uses bank 1 in Normal and bank 4 in Alt. Banks 2 and 3 remain available in the repo but are not currently active in the engine.

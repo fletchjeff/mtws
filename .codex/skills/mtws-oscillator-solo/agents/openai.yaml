@@ -1,7 +1,0 @@
-interface:
-  display_name: "MTWS Oscillator Solo"
-  short_description: "Scaffold a standalone mtws oscillator"
-  default_prompt: "Use $mtws-oscillator-solo to scaffold a standalone oscillator target in this mtws repo."
-
-policy:
-  allow_implicit_invocation: true

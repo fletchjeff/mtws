@@ -1,21 +1,21 @@
 # Agent Reference for `mtws`
 
 Use this as a reference catalog when implementing or refactoring code in `mtws`.
-The goal is to increase reuse of proven helpers from `../Utility-Pair/src/` and
+The goal is to increase reuse of proven helpers from `reference/utility_pair/` and
 to steer oscillator work toward the existing `mtws` engine patterns.
 
 ## Oscillator Skill Map
-- Use `.codex/skills/mtws-oscillator-design/` when shaping sonic intent, control maps, helper reuse plans, and hot-path risk before code edits.
-- Use `.codex/skills/mtws-oscillator-solo/` when creating a standalone oscillator target under `prex/<engine>/` with `prex/solo_common/`.
-- Use `.codex/skills/mtws-oscillator-integration/` when wiring an oscillator into `prex/mtws/engines/`, `prex/mtws/core/shared_state.h`, the engine registry, and the user docs.
+- Use `.ai/skills/mtws-oscillator-design/` when shaping sonic intent, control maps, helper reuse plans, and hot-path risk before code edits.
+- Use `.ai/skills/mtws-oscillator-solo/` when creating a standalone oscillator target under `knots/solo_engines/<engine>/` with `knots/solo_engines/solo_common/`.
+- Use `.ai/skills/mtws-oscillator-integration/` when wiring an oscillator into `knots/src/engines/`, `knots/src/core/shared_state.h`, the engine registry, and the user docs.
 
 ## Most Useful Repo References
 - `docs/engines/`: current per-engine control maps, sonic goals, and hardware test checklists
 - `docs/MTWS_USER_GUIDE.md`: current integrated build behavior that overrides standalone docs when they differ
-- `prex/solo_common/`: standalone control/router scaffold
-- `prex/mtws/engines/`: integrated slot interface and current engine patterns
-- `prex/mtws/engines/bender_engine.cpp`: simple `ControlTick()` to `RenderSample()` split with `Utility-Pair`-style optimizations
-- `prex/mtws/engines/din_sum_engine.cpp`: heavier control-rate caching and hot-path optimization examples
+- `knots/solo_engines/solo_common/`: standalone control/router scaffold
+- `knots/src/engines/`: integrated slot interface and current engine patterns
+- `knots/src/engines/bender_engine.cpp`: simple `ControlTick()` to `RenderSample()` split with Utility-Pair-style optimizations
+- `knots/src/engines/din_sum_engine.cpp`: heavier control-rate caching and hot-path optimization examples
 
 ## Reuse Priority
 Before adding a new helper, check whether an existing Utility-Pair implementation already covers it:
@@ -26,7 +26,7 @@ Before adding a new helper, check whether an existing Utility-Pair implementatio
 5. Oscillators and reusable DSP blocks
 
 ## Utility-Pair Source Map
-These are the first files to inspect in `../Utility-Pair/src/`:
+These are the first files to inspect in `reference/utility_pair/`:
 - `main.cpp`: `rnd12`, `rnd24`, `rndi32`, `cabs`, `clip`, `Exp4000`, `ExpVoct`, `ExpNote`, and large pattern examples
 - `ComputerCard.h`: platform I/O helpers and edge-detect behavior
 - `delayline.h`: reusable delay line with interpolation support
@@ -208,10 +208,10 @@ Guidance:
 - keep the hot path minimal after porting
 
 ## Preferred `mtws` Bootstrap Patterns
-- Start new standalone oscillator scaffolds from the simpler `prex/bender/` structure.
-- Use `prex/sawsome/` as a reference when you need multi-voice spread, stereo gain maps, or PolyBLEP-like per-voice control frames.
-- Use `prex/mtws/engines/bender_*` as the first integrated-slot template because it shows a clear `ControlTick()` to `RenderSample()` split and `Utility-Pair`-inspired optimizations.
-- Use `prex/mtws/engines/din_sum_*` when the hot path needs heavier caching or control-rate precomputation.
+- Start new standalone oscillator scaffolds from the simpler `knots/solo_engines/bender/` structure.
+- Use `knots/solo_engines/sawsome/` as a reference when you need multi-voice spread, stereo gain maps, or PolyBLEP-like per-voice control frames.
+- Use `knots/src/engines/bender_engine.cpp` as the first integrated-slot template because it shows a clear `ControlTick()` to `RenderSample()` split and Utility-Pair-inspired optimizations.
+- Use `knots/src/engines/din_sum_engine.cpp` when the hot path needs heavier caching or control-rate precomputation.
 
 ## Realtime Performance Rules
 - Keep `ProcessSample()` under the time budget of about `20us` at `48kHz`
@@ -226,7 +226,7 @@ Guidance:
 ## Code Review Checklist for Plans
 Before proposing code changes, explicitly answer:
 
-1. Which helper(s) from `../Utility-Pair/src/` did I check?
+1. Which helper(s) from `reference/utility_pair/` did I check?
 2. Which helper(s) will I reuse or adapt?
 3. If not reusing, why not?
 4. What is the performance impact in `ProcessSample()`?

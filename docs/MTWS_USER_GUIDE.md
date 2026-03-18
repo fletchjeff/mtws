@@ -1,6 +1,6 @@
 # MTWS User Guide
 
-This guide covers the integrated `mtws` firmware in `prex/mtws`.
+This guide covers the integrated `mtws` firmware in `knots/src`.
 
 - It describes the shared panel, CV, pulse, LED, and MIDI behavior that all six slots use in the integrated build.
 - For engine-specific sound design details, see the per-engine docs in `docs/engines/`.
