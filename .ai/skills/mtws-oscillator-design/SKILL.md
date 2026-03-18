@@ -24,7 +24,7 @@ Use this skill when the task is to turn an oscillator idea into a decision-compl
 
 1. Define the sonic goal in plain language.
 2. Choose the control map for `Main`, `X`, `Y`, `Alt`, `Out1`, and `Out2`.
-3. Identify which helper or pattern from `reference/utility_pair/` or an existing `mtws` engine should be reused first.
+3. Identify which helper or pattern from `reference/utility_pair/`, `ComputerCard.h`, `reference/workshop_computer_examples/`, `reference/10_twists/`, or an existing `mtws` engine should be reused first.
 4. Split work into control-rate precomputation and audio-rate rendering.
 5. Call out hot-path risks and which optimization notes matter.
 6. End with the exact build and hardware validation steps needed for the first implementation pass.
@@ -35,6 +35,7 @@ A good result from this skill includes:
 - sonic intent
 - control map
 - helper reuse plan
+- reference-routing summary
 - hot-path risk list
 - documentation impact
 - build and hardware test checklist

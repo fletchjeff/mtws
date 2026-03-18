@@ -31,6 +31,9 @@ Follow this order when adding a new `mtws` engine slot.
 ## Optimization References
 - If the integrated path is too heavy, recheck [../../../../AGENT_REFERENCE.md](../../../../AGENT_REFERENCE.md) first.
 - Then compare [../../../../knots/src/engines/bender_engine.cpp](../../../../knots/src/engines/bender_engine.cpp) and [../../../../knots/src/engines/din_sum_engine.cpp](../../../../knots/src/engines/din_sum_engine.cpp) for cached control-frame strategies already used in `mtws`.
+- If the integration touches platform behavior, jack semantics, or calibrated helpers, inspect [../../../../ComputerCard.h](../../../../ComputerCard.h) before adding wrappers.
+- If the integration touches USB, MIDI transport, second-core work, or browser tooling, inspect the smallest relevant example under [../../../../reference/workshop_computer_examples/](../../../../reference/workshop_computer_examples/).
+- If the engine needs larger oscillator architecture, interpolation, or USB worker/service-loop patterns, inspect the smallest relevant file under [../../../../reference/10_twists/](../../../../reference/10_twists/).
 - Recheck [../../../../AGENTS.md](../../../../AGENTS.md) before moving any new work into the audio hot path.
 
 ## Build and Test

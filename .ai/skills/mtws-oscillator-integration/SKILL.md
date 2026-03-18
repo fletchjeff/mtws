@@ -34,6 +34,7 @@ Use this skill when a standalone oscillator or DSP core needs to become an integ
 - Keep `ControlTick()` focused on control-domain preprocessing.
 - Keep `RenderSample()` focused on sample generation using the precomputed frame.
 - Preserve shared host behavior from `MTWS_USER_GUIDE.md`.
+- Check `ComputerCard.h` and `reference/workshop_computer_examples/` before inventing new platform or USB glue.
 - If the integrated version diverges from the standalone version for performance, document the reason and keep the sonic intent aligned.
 
 ## Validation Rules

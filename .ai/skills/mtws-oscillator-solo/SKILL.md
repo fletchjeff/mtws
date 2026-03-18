@@ -34,7 +34,7 @@ Use this skill when the goal is to get a standalone oscillator running under `kn
 - The bundled templates are intentionally small and are based on the lighter `bender` structure.
 - Keep control mapping work in `BuildRenderFrame()`.
 - Keep audio-rate work in `RenderSample()`.
-- If you need more advanced patterns, inspect `knots/solo_engines/sawsome/` for voice maps or `reference/utility_pair/` for reusable DSP blocks.
+- If you need more advanced patterns, inspect `knots/solo_engines/sawsome/` for voice maps, `reference/utility_pair/` for reusable DSP blocks, `ComputerCard.h` for platform behavior, and `reference/10_twists/` for larger oscillator/interpolation ideas.
 
 ## Validation Rules
 

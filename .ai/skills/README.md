@@ -16,6 +16,18 @@ containing `name`, `description`, `prompt`, and `auto_invoke` fields.
   Wire an oscillator into the six-slot `mtws` host, registry, docs, and
   validation loop.
 
+## Reference Routing
+
+Before using one of the repo skills, read the repo-root guides first:
+- `AGENTS.md`: repo policy, workflow, validation loop, and realtime rules
+- `AGENT_REFERENCE.md`: reference routing, helper catalog, and bootstrap patterns
+
+Choose references by task type:
+- `reference/utility_pair/`: DSP helpers, curves, filters, delay utilities, and small oscillator blocks
+- `ComputerCard.h`: Workshop System platform API, jack behavior, calibrated helpers, and board I/O conventions
+- `reference/workshop_computer_examples/`: USB, MIDI, second-core, calibration, sample upload, and web tooling patterns
+- `reference/10_twists/`: larger oscillator architecture, interpolation, resources/settings, and USB worker patterns
+
 ## Skill Layout
 
 ```

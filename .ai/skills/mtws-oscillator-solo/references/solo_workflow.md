@@ -26,6 +26,9 @@ Follow this order for a new standalone oscillator.
 ## Optimization References
 - If the first scaffold misses timing, recheck [../../../../AGENT_REFERENCE.md](../../../../AGENT_REFERENCE.md) first.
 - Then compare [../../../../knots/src/engines/bender_engine.cpp](../../../../knots/src/engines/bender_engine.cpp) and [../../../../knots/src/engines/din_sum_engine.cpp](../../../../knots/src/engines/din_sum_engine.cpp) for concrete `mtws` optimization patterns.
+- If the scaffold depends on platform I/O behavior or calibrated helpers, inspect [../../../../ComputerCard.h](../../../../ComputerCard.h) before adding custom glue code.
+- If the scaffold touches USB, MIDI transport, or second-core behavior, inspect the smallest relevant example under [../../../../reference/workshop_computer_examples/](../../../../reference/workshop_computer_examples/).
+- If the oscillator needs larger interpolation or service-loop patterns, inspect the smallest relevant file under [../../../../reference/10_twists/](../../../../reference/10_twists/).
 - Recheck [../../../../AGENTS.md](../../../../AGENTS.md) before introducing heavier DSP in `RenderSample()`.
 
 ## Build and Test

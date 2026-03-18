@@ -26,6 +26,11 @@ This file is the single source of truth for agent behavior inside the `mtws` rep
 - Reference material (Utility-Pair helpers, Workshop Computer examples, 10 Twists) lives in `reference/`.
 - Do not edit vendored or reference code such as `../pico-sdk/` or `reference/` unless explicitly requested.
 
+## Reference Routing
+- Start with `AGENT_REFERENCE.md` to choose the smallest relevant reference set before reading code broadly.
+- Use the smallest matching bucket for the task: `reference/utility_pair/` for reusable DSP helpers, repo-root `ComputerCard.h` for platform behavior, `reference/workshop_computer_examples/` for board-level examples, and `reference/10_twists/` for larger oscillator architecture.
+- When a task touches both platform behavior and DSP, read the relevant platform reference first, then the smallest matching DSP reference.
+
 ## RP2040 + ComputerCard Constraints
 - Audio callback rate is 48kHz; `ProcessSample()` budget is about 20.8us.
 - Keep audio-rate code deterministic and lightweight.
@@ -33,6 +38,14 @@ This file is the single source of truth for agent behavior inside the `mtws` rep
 - Use `__not_in_flash_func()` for performance-critical code paths when needed.
 - Move heavy non-audio work to core 1 when appropriate.
 - Do not run USB MIDI service (`tud_task()`) on the audio core path.
+
+## Current `mtws` Execution Split
+- The realtime audio loop ultimately runs in `ComputerCard::AudioWorker()` and calls `ProcessSample()` at `48kHz`.
+- The integrated `mtws` host launches a separate core-1 worker from `MTWSApp::ProcessSample()` using `multicore_launch_core1(Core1Entry)`.
+- That worker runs `MTWSApp::ControlAndMIDIWorkerCore()`, which handles non-audio work and publishes control frames for the audio path.
+- `MIDIWorker::Poll()` calls `tud_task()`, so USB MIDI servicing stays off the audio core path.
+- In the integrated host, `ControlTick()` is not per-sample: `kControlDivisor = 48`, so control updates happen every 48 audio samples, about `1kHz`.
+- Treat this split as the default `mtws` architecture unless there is a concrete reason to change it.
 
 ## Clock Policy
 - `knots/src/main.cpp` currently sets the RP2040 SYS clock to `200MHz` at startup using `vreg_set_voltage(VREG_VOLTAGE_1_15)` and `set_sys_clock_khz(200000, true)`.
@@ -54,6 +67,9 @@ This file is the single source of truth for agent behavior inside the `mtws` rep
 ## Helper-First Policy
 - Before adding new DSP or math helpers, check `AGENT_REFERENCE.md` first.
 - Prefer adapting proven helpers from `reference/utility_pair/` over inventing new ones.
+- Before changing input/output semantics, calibration behavior, or MIDI/CV helper usage, check `ComputerCard.h` and the relevant workshop example first.
+- Before adding larger oscillator infrastructure, parameter interpolation, or USB worker changes, check `reference/10_twists/` and existing `knots/src/engines/` patterns first.
+- Before changing core split, control cadence, or where `ControlTick()` work happens, inspect `knots/src/main.cpp` first.
 - If not reusing a helper, explain why.
 - Keep ports minimal and preserve realtime safety.
 
@@ -107,5 +123,6 @@ There is no automated unit-test suite in `mtws`.
 - Include purpose, touched paths, build commands run, and hardware validation notes.
 
 ## Agent Reference File
-For helper catalogs, reuse patterns, and oscillator workflow pointers, consult:
+For helper catalogs, reference routing, reuse patterns, and oscillator workflow pointers, consult:
 - `AGENT_REFERENCE.md`
+- `.ai/skills/README.md`
