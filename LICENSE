@@ -78,8 +78,7 @@ This project includes or derives from the following third-party works.
 4. Adventure Kid Waveforms (AKWF)
    Source: https://github.com/KristofferKarlAxelEkstrand/AKWF-FREE
            https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/
-   Files:  tools/floatable_wavetable_browser/AKWF/,
-           knots/solo_engines/floatable/AKWF_60_ordered.wav
+   Files:  tools/floatable_wavetable_browser/AKWF/
 
    CC0 1.0 Universal (Public Domain Dedication)
    To the extent possible under law, Kristoffer Ekstrand has waived all

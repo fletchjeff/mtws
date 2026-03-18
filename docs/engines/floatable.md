@@ -36,6 +36,9 @@ independent Out1/Out2 morph positions inside that shared timbral space.
 - Sweep slowly through all 16 waves in each active bank and listen for boundary clicks or weak order choices.
 
 ## Implementation Notes
-- Integrated `mtws` and the standalone `floatable` target now share the same four curated `16 x 256` bank headers in [knots/src/wavetables](knots/src/wavetables).
-- Both builds now use the same compact morph-state approach and render directly from source waves at audio rate; see [floatable_engine.cpp](knots/src/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](knots/solo_engines/floatable/floatable_solo_engine.cpp).
-- The current curated mapping uses bank 1 in Normal and bank 4 in Alt. Banks 2 and 3 remain available in the repo but are not currently active in the engine.
+- Integrated `mtws` and the standalone `floatable` target now share the same curated `16 x 256` bank headers in [knots/src/wavetables](knots/src/wavetables).
+- The active runtime path keeps only `floatable_bank_1_16x256.h` and `floatable_bank_4_16x256.h`.
+- Those two active bank headers were generated from `tools/floatable_wavetable_browser/1_floatable_selection_16_b.json` and `tools/floatable_wavetable_browser/4_floatable_selection_16_snippets.json`.
+- Both builds use the same compact morph-state approach and render directly from source waves at audio rate; see [floatable_engine.cpp](knots/src/engines/floatable_engine.cpp) and [floatable_solo_engine.cpp](knots/solo_engines/floatable/floatable_solo_engine.cpp).
+- The current curated mapping uses bank 1 in Normal and bank 4 in Alt.
+- Each source wave is `256` samples long. The top `8` phase bits choose the stored sample and the next `12` bits interpolate toward the next sample, which keeps memory and read bandwidth lower than the older `512`-sample experiments.
