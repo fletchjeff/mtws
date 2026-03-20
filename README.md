@@ -342,7 +342,7 @@ It is per voice, using tri_state_[kNumSawsomeVoices] in sawsome_engine.h (line 2
 The leak term keeps the integrator from drifting or blowing up over time.
 The detune, pan, and gain setup stay the same; alt mode only changes the waveform source.
 
-Explain to me how this `tri_state_[voice_index] -= tri_state_[voice_index] >> 11` creates a triangle
+> Explain to me how this `tri_state_[voice_index] -= tri_state_[voice_index] >> 11` creates a triangle
 
 That line does not create the triangle by itself. The triangle-ish waveform comes from the whole block in sawsome_engine.cpp (line 154):
 
