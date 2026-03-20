@@ -218,19 +218,79 @@ In Alt Mode the wavefolder is routed through an additional bitcrusher first befo
 **X** is the amount of folding for both folders and **Y** is the amount of crushing for both bitcrushers.
 
 #### Floatble
-A wavetable oscillator with 2 wavetables based on 16 x 256 sample [AKWF](https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/) single cycle waves
+A wavetable oscillator with 2 wavetables based on 16 x 256 sample [AKWF](https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/) single cycle waves. One wavetable per mode, i.e. Normal and Alt use a different wavetable. The 2 audio outputs are different interpolated morphing positions over the 16 waves with **X** and **Y** used to adjust the position. You sweep through the same wavetable but the outputs and just different postions in the wavetable. 
 
- of 256 sacurated source bank per mode and
-independent Out1/Out2 morph positions inside that shared timbral space.
+I originally wanted to have 2 different wavetables per mode, so 4 in total, but the reads from flash via XIP were too much and caused it to glitch. Something I learned about during this whole process. 
 
-## Control Map
-- Main: pitch (10Hz..10kHz)
-- X: Out1 wavetable position inside the active source bank (or AudioIn1 attenuator)
-- Y: Out2 wavetable position inside the active source bank (or AudioIn2 attenuator)
+The actual wavetables used were createed using a tool I got the coding agent to make that lets me browse through, filter, audition and assemble my own "curated" wavetable. See the [floatable wavetable creator](mtws/tools/floatable_wavetable_creator) folder. 
+
+- [ ] TO-DO, picture of the tool goes of the here.
+
+This took an evening to make while dual screening a show and is surpsingly fun to use. If you don't like the wavetables being used, use the tool to make your own or tell your coding agent to use some wave files you like, convert to the required header format and rebuild the firmware. 
 
 #### Cumulus
+This is the original additive osciallator I was going for. I borrowed most of the fundamental design ideas from the Plait Harmonic Oscillator which is a bump and slope implementation with 16 partials. The Plaits uses 24 which is more than the RP2040 can handle. 
+
+- [ ] TO-DO, picture of the bump and slope goes here.
+
+It's 16 x phase increment oscillators whose frequencies follow the standandard [harmonic series](https://en.wikipedia.org/wiki/Harmonic_series_(music)) from the fundamental, each generating a sine wave using the `SinLUT()` function. 
+
+The was some complexity managing the overall output gain to keep a constant percieved volume as the gain of the individual partials changed. There was a lot of back and forth with the coding agent to get this right. 
+
+_Normal Mode_  
+**X** moves the _bump_ from the first partial to the last (16). This is interpolate between partials but it can sound like it's stepping with a steep slop. **Y** sets the _slope_ for very steep at full CCW, where only the 2 closest partials to the _bump_ postion are active to flat at full CW, where all partials have the same gain. Well approximately at either end, making exactly flat or only the 2 partials would require extra caculations for an alreay busy osciallator. At the mid point of **Y** the partials follow a $1/N$  distrubution, also a [harmonic series](https://en.wikipedia.org/wiki/Harmonic_series_(mathematics)) but like, a maths one. 
+
+There is a different code path used to calculate the gain for each partial depending on whether **Y** is before of after the mid point to make the scaling sound natural. Ask your coding agent about this: _"How does the Y slope calculation path change over at the mid point?"_
+
+_Alt Mode_  
+The only change with Alt mode is that it implements a "centroid" feature that can change the frequencies of the partials. Using the _bump_, i.e. the **X** position as the central point, **Y** will additionally modify the partial frequencies to "move in" toward the _bump_ positional going CCW and "move out" to the edges (partial 1 and 16) goin CW. Try it, it sounds very cool!
+
+- [ ] TO-DO, picture of the bump and slope plus harmonic shift goes here.
 
 #### Losenge
+I have a very old and somewhat road worn Nord Modular Micro that was my introduction to the world of modular synthesis. 
+
+- [ ] TO-DO, picture of the nord
+
+It has both a vocal oscillator and vowel filter that I really liked and I wanted to make something similar. I tried making this work by putting 2 bandpass filters at the vowel [formant frequencies](https://en.wikipedia.org/wiki/Formant) after a saw wave but it didn't have the depth of sound I remember from the Nord. I want back to Twists/Braids and the `VOWL` was much closer to what I wanted, so I got the coding agent to implement that.
+
+The concept is 3 there are "formant" osciallators running at "fixed" frequencies. 2 x sine waves using `SinLUT()` and a square wave using `SquareQ12()`. They are running at the 3 formant frequencies for the vowel sound we want to make. As for *A* its a sin wave at 609Hz, another 1000Hz and the square running at 2450Hz. These are then summed/mixed together at gain values of 1, 0.5 and 0.251 respectively. The frequeny and gain values vary per vowel and there are tables with all these values in the code. 
+
+There is also the primary phase increment based ramp oscillator, with it's frequeny attached to the Main knob and other frequency modifiers, known as the "[glottal](https://en.wikipedia.org/wiki/Glottis) envelope" that does 2 things:
+
+1. It applies amplitude modulation to the 3 summed formant oscillators.
+2. It resests the the phase of all 3 of the formant oscillators every time it wraps, like oscillator sync. 
+
+This gives the impression of an overall fundamnetal frequency being applied to the 3 formant oscillators that can be shifted around while keep the underlying vowel consistent. By changing the frequency and gain values of the formant osciallatros independently from the main glottal envelope, you get the singing voice timbre of the losenge engine.
+
+_Normal Mode_
+This runs the 3 formant oscillators at F1, F2 and F3 for the associated vowel. _**Note:** This is the mapping for a male voice_
+
+| Vowel | F1 (Hz) | F2 (Hz) | F3 (Hz) |
+| --- | ---: | ---: | ---: |
+| A | 609 | 1000 | 2450 |
+| E | 400 | 1700 | 2300 |
+| IY | 238 | 1741 | 2450 |
+| O | 325 | 700 | 2550 |
+| U | 415 | 1400 | 2200 |
+
+**X** morphs the frequency and gain values between the vowels, moving from A > E > IY > O > U over the rand of the know.
+
+**Y** changes the F1 value but keeps the ratios between the same so it moves from sounding  darker/lower at at full CCW to brighter/higher at full CW.
+
+## Alt Mode
+This is the brighter upper-formant table. It replaces the base `F1/F2/F3` set with an upper `F2/F3/F4` values.
+
+| Vowel | F2-like (Hz) | F3-like (Hz) | F4-like (Hz) |
+| --- | ---: | ---: | ---: |
+| A | 1000 | 2450 | 3300 |
+| E | 1700 | 2300 | 3500 |
+| IY | 1741 | 2450 | 3300 |
+| O | 700 | 2550 | 3400 |
+| U | 1400 | 2200 | 3300 |
+
+I originally used the mapping for a female voice, but it didn't sound all the different when keeping the fundamental gottal envelope frequency the same.
+
 
 #### Din Sum
 
@@ -299,5 +359,30 @@ Why that sounds triangle-like: integrating a bright waveform knocks down its upp
 
 One important nuance: this is not a mathematically perfect triangle. A perfect triangle is more naturally made by integrating a square wave or folding phase directly. Here it’s really “PolyBLEP saw through a leaky integrator,” which is a cheap, stable approximation that gets close enough sonically.
 
+What is XIP?
 
+`XIP` means `execute in place`.
+
+On the RP2040, your program and `const` data usually live in external QSPI flash, but the chip memory-maps that flash so code can run from it and data can be read from it without first copying everything into SRAM.
+
+In practice for this repo:
+- functions not marked to run from RAM often execute from flash via XIP
+- large `static const` tables like the `floatable` wavetable banks are typically read directly from flash via that same mapping
+- this saves scarce SRAM, which is why it’s attractive for big lookup tables
+
+The tradeoff is speed and predictability:
+- SRAM access is faster and more deterministic
+- XIP flash access goes through the flash interface and cache, so it can be slower or less predictable under heavy access
+- that’s why hot code paths sometimes use `__not_in_flash_func(...)` to place the function in RAM instead of executing from flash
+
+So when I said the `floatable` tables are being read through XIP, I meant:
+- the wavetable arrays are stored in flash
+- `RenderSample()` dereferences them directly each audio tick
+- they are not copied into a separate RAM buffer first
+
+A simple mental model:
+- SRAM: fast workbench
+- flash/XIP: big storage shelf you can reach directly, but not as quickly as the workbench
+
+If you want, I can explain how `__not_in_flash_func` and the RP2040 linker/script usually decide what ends up in RAM vs flash in this project.
 
