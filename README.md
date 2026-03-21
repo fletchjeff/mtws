@@ -97,7 +97,7 @@ You don't have to use it this way though, and this implementation repurposes the
 #### Main, X and Y
 The main knob is used for tuning the main oscillator of all the engines. It's a 10 octave span from 10Hz to 10KHz, clamped at either end so CV or MIDI input won't push it past those min and max values. After trying different values for the range, this felt the most usable. It does get a bit noisy at higher frequencies for some of the engines, but I like it. Plus I'm old, so while my dog doesn't appreciate the aliasing, I don't notice it :)
 
-The X and Y trimmers adjust 2 parameters exposed from the engines. These differ per engine and, in some cases, are different in the Alt mode. The parameters are musical to encourage their use.
+The X and Y trimmers adjust 2 parameters exposed by the engines. These differ per engine and, in some cases, are different in the Alt mode. The parameters are musical to encourage their use.
 
 Below the X and Y trimmers are the two audio inputs. This layout lends itself to using those audio inputs as CV inputs for the X and Y trimmers. The ComputerCard has a function `Connected(Input::Audio1)` that will allow different code to run if there is a cable connected to the input jack. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These Audio inputs run at control rate, not at the full audio rate. 
 
