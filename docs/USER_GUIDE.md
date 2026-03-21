@@ -6,7 +6,7 @@ The Main knob sets pitch, X and Y shape the current engine, and the Z switch let
 
 The rest of the ins and outs and the USB MIDI make it easy to integrate with the rest of to the rest of the Workshop System and your your music making gear. Its built to be played, patched and connected.
 
-![MTWS](images/MTWS.png)
+![MTWS](images/MTWS_800.png)
 
 ## Inputs, Outputs and Control
 All the inputs and outputs serve a musical purpose and can (and should) be use to get to new and interestings sounds.
@@ -116,6 +116,8 @@ This is a super triangle mode, which is the same thing but with triangle waves.
 
 **X** and **Y** do the same thing.
 
+![Sawsome](images/sawsome.png)
+
 #### Bender
 A combination wavefolder and bitcrusher.
 
@@ -128,12 +130,14 @@ In Alt Mode the wavefolder is routed through an additional bitcrusher first befo
 
 **X** is the amount of folding for both folders and **Y** is the amount of crushing for both bitcrushers.
 
+![Bender](images/bender.png)
+
 #### Floatable
 A wavetable oscillator with 2 wavetables based on 16 x 256 sample [AKWF](https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/) single-cycle waves. One wavetable per mode, i.e. Normal and Alt modes use different wavetables.
 
 Move through wavetables (with interpolation) using the X and Y knobs, sending the X position wave to Audio Out 1 **[7]** and Y position Audio Out 2 **[7]**. This creates an interesting stereo field.
 
-- [ ] TO-DO, picture of the tool goes here.
+![Floatable](images/floatable.png)
 
 #### Cumulus
 This and additive oscillator with 16 partials with *bump* and *slope* shaping controls and an additional centroid option in Alt mode.
@@ -141,12 +145,10 @@ This and additive oscillator with 16 partials with *bump* and *slope* shaping co
 *Normal Mode*  
 **X** moves the *bump* from the first partial to the last. This is interpolated between partials to be smooth, but it can sound like it's stepping when the slope is steep. **Y** sets the *slope* from very steep at full CCW, where only the 2 partials closest to the *bump* position are active, to flat at full CW, where all partials have the same gain. 
 
-- [ ] TO-DO, picture of the bump and slope goes here.
-
 *Alt Mode*  
 Alt mode implements a "centroid" feature that can change the frequencies of the partials. Using the *bump*, i.e. the **X** position, as the central point, **Y** will additionally modify the partial frequencies to **move in** toward the *bump* position going CCW and **move out** to the edges (partial 1 and 16) and bouncing back in going CW. Try it, it sounds very cool!
 
-- [ ] TO-DO, picture of the bump and slope plus harmonic shift goes here.
+![Cumulus](images/cumulus.png)
 
 #### Losenge
 This a vowel sound / vocal oscillator. It uses 3 *formant* oscillators running at fixed frequencies. There are 2 x sine waves and a square wave. These are running at the 3 formant frequencies for the specific vowel sound we want to make. For *A* it's a sine wave at 609Hz, another at 1000Hz and the square running at 2450Hz. These are then summed/mixed together at gain values of 1, 0.5 and 0.251 respectively. The frequency and gain values vary per vowel and there are tables with all these values in the code.
@@ -155,8 +157,6 @@ There is also the primary phase increment ramp oscillator, with its frequency at
 
 1. It applies amplitude modulation to the 3 summed formant oscillators.  
 2. It resets the phase of all 3 of the formant oscillators every time it wraps, like oscillator sync.
-
-- [ ] TO-DO, picture of this implementation
 
 This gives the impression of an overall fundamental frequency being applied to the 3 formant oscillators that can be shifted around while keeping the underlying vowel consistent. By changing the frequency and gain values of the formant oscillators independently from the main glottal envelope, you get the singing voice timbre of the Losenge engine.
 
@@ -188,6 +188,8 @@ This is the brighter upper-formant table. It replaces the base `F1/F2/F3` set wi
 
 An early iteration used the frequency mapping for a female voice for Alt mode, but it didn't sound that different to Normal mode when keeping the fundamental glottal envelope frequency the same.
 
+![Losenge](images/losenge.png)
+
 #### Din Sum
 Where Bender is the distortion module, this is the noise module. Both modes are based on an oscillator that morphs between a sine wave and saw wave in noisy way.
 
@@ -198,11 +200,9 @@ In Normal mode the transition is an interpolation between the 2 waves with added
 
 For Audio Out 2 the saw wave is phase shifted 90 degrees to give a sense of widening stereo as you move **X**.
 
-- [ ] TO-DO, picture of the normal mode
-
 *Alt Mode*   
 In Alt mode the output switches between a sine wave and saw wave randomly, but only when the waveform cycle repeats. This way you will always either get one full sine wave or one full saw wave, randomly chosen.
 
 **X** biases the randomness towards the sine wave going CCW and towards the saw wave going CW. The midpoint is 50/50. **Y** is the *rate* of switching, or rather how long a wave is held before it's allowed to change. From slow blips at full CCW to flickering at full CW.
 
-- [ ] TO-DO, picture of the alt
+![Din Sum](images/din_sum.png)
