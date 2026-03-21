@@ -275,6 +275,112 @@ Apply the repo-wide performance policy from `AGENTS.md`, then use these referenc
 - Preserve the current host split where MIDI/USB/control work happens off the audio core path unless there is a measured reason to change it
 - Preserve the current host control cadence of 48 audio samples unless there is a measured reason to change it
 
+## ComputerCard API Quick-Reference
+Always verify against `ComputerCard.h` — LLMs frequently hallucinate API names that don't exist.
+
+### Knobs
+- `KnobVal(Knob::Main / X / Y)` → `0–4095` (0 = fully CCW). Smoothed, may jitter ±1.
+- **Pots don't reliably reach 0** at minimum (~14–4095 typical). Remap if zero-crossing is needed.
+- Use `int32_t` to avoid signed/unsigned bugs.
+
+### Switch
+- `SwitchVal()` → `Switch::Up / Middle / Down`
+- `SwitchChanged()` → true for one sample on transition
+
+### Audio I/O
+Signed 12-bit, **-2048 to +2047** (~±6V). Via MCP4822 SPI DAC. Inputs sampled at 96kHz, averaged to 48kHz.
+- `AudioIn1()`, `AudioIn2()`, `AudioIn(int i)` — i=0 left, i=1 right
+- `AudioOut1(val)`, `AudioOut2(val)`, `AudioOut(int i, val)`
+
+### CV I/O
+Signed 12-bit, **-2048 to +2047** (~±6V). Inputs at 24kHz with LPF.
+- `CVIn1()`, `CVIn2()`
+- `CVOut1(val)`, `CVOut2(val)` — **uncalibrated**
+- `CVOut1Precise(val)` — signed 19-bit (-262144 to +262143), sigma-delta, **uncalibrated**
+- `CVOut1MIDINote(noteNum)` — 0–127, **calibrated** (reads EEPROM)
+- `CVOut1Millivolts(mv)` — **calibrated** (v0.2.7+), returns true if clamped
+- `CVOutsCalibrated()` — true if EEPROM calibration loaded
+- **Only `CVOutMIDINote` and `CVOutMillivolts` use calibration.** Input calibration not yet implemented.
+
+### Pulse I/O
+- `PulseIn1()` bool, `PulseIn1RisingEdge()`, `PulseIn1FallingEdge()`
+- `PulseOut1(true)` = ~5V. All inversion handled internally.
+
+### Jack Detection
+- `Connected(Input::Audio1)`, `Disconnected(Input::CV1)`
+- Requires `EnableNormalisationProbe()` before `Run()`
+- No detection on output jacks (hardware limitation)
+
+### LEDs
+`LedOn(n)`, `LedOff(n)`, `LedBrightness(n, 0..4095)`. **Integer indices 0–5 only** — not enums.
+```
+| 0 1 |  (top)
+| 2 3 |  (middle)
+| 4 5 |  (bottom)
+```
+**WARNING:** LLMs commonly hallucinate `LED::L1` or similar enum names. These do not exist. Always use integer indices.
+
+### Other
+`HardwareVersion()`, `USBPowerState()`, `UniqueCardID()`, `Abort()`, `ThisPtr()`
+
+## Hardware Errata
+These affect all Workshop Computer boards and should be considered during design and debugging.
+
+### RP2040 ADC Erratum E11
+The ADC has DNL spikes at values **511, 1535, 2559, 3583**, creating ~half-semitone holes in 1V/oct response. No silicon fix exists.
+- ComputerCard applies correction for **CV inputs only** (not audio)
+- Effective resolution: ~9-bit ENOB despite 12-bit nominal
+- Knob values may fluctuate by ~10 out of 4096
+- Residual pitch error: at least ±5 cents even with calibration
+
+### MCP4822 DAC (Audio Outputs)
+- "Major code transition glitch" at zero crossing (0x7FF → 0x800), ~8× LSB → audible crackle
+- **Workaround:** apply a small DC offset so the crossing happens at a non-zero amplitude
+- INL worst case ~20 cents — not suitable for precision 1V/oct without calibration
+
+### CV Output (PWM + Sigma-Delta)
+- Base: 11-bit PWM at ~61kHz through RC LPF (~3kHz cutoff)
+- Sigma-delta extends to **19-bit effective precision**
+- With calibration: excellent tuning across 10+ octaves
+- Gain varies ~0.7% between channels → calibration essential for pitch
+
+### Calibration and EEPROM
+- **EEPROM:** AT24C08D (8kbit), I2C0 on GPIO 16+17, addresses 0x50–0x5B. Added in Rev 1.0.0+.
+- **Output calibration (implemented):** stored by MIDI card, 3 points/channel (+2V, 0V, -2V). Read by `CVOutMIDINote`/`CVOutMillivolts` only.
+- **Input calibration: not implemented** as of Feb 2026.
+- **Proto 1.2 boards have no EEPROM** → ComputerCard UF2s may crash. Check `HardwareVersion()`.
+
+### Hardware Versions
+
+| Version | Era | Notes |
+|---------|-----|-------|
+| Proto 1.2 | Early 2024 | **No EEPROM.** ComputerCard UF2s may crash. |
+| Rev 1.0.0 | Late 2024 | EEPROM added. Production boards. |
+| Rev 1.1 | Jan 2025 | USB host/device detection via `USBPowerState()`. |
+
+### Normalisation Probe
+GPIO4 sends a pseudo-random pattern to detect unplugged jacks.
+- **GPIO4 = UART1 TX** — enabling Arduino UART1 serial will corrupt probe readings.
+- No detection on output jacks.
+
+## Performance Budget (48kHz, One Core)
+
+| Workload | Approx CPU |
+|----------|------------|
+| 5 saw oscillators + 24dB filter + Dattorro reverb (fixed-point) | ~30% |
+| Dattorro reverb alone (fixed-point) | ~50% |
+| 2× `sinf()` calls (software float) | ~100% |
+| Double-precision (`sin()`, `double`) | Too slow |
+
+Second core is free for USB/MIDI, control logic, or parallelizable computation — but keep audio DSP on a single core (see Multicore guidance in host architecture above).
+
+## Platform Gotchas (LLM-Relevant)
+- **GPIO4 = normalisation probe = UART1 TX.** Arduino UART1 serial corrupts probe readings.
+- **Arduino USB stack interferes with ADC.** Set USB Stack to "No USB".
+- **Proto 1.2 boards have no EEPROM** → ComputerCard may crash. Check `HardwareVersion()`.
+- **Knobs don't reach 0** at minimum. Remap if zero-crossing is needed.
+- **LLM code may invent APIs** (e.g., `LED::L1`). Always verify against `ComputerCard.h`.
+
 ## Code Review Checklist for Plans
 Before proposing code changes, explicitly answer:
 
