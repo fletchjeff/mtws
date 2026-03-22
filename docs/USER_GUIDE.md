@@ -20,7 +20,7 @@ The X and Y trimmers adjust 2 parameters exposed by the engines. These differ pe
 The X trimmer has an additional function used in conjunction with the Z switch.
 
 #### [5] + [6] X and Y Inputs
-Below the X and Y trimmers are the two audio inputs. The inputs can accept values from -6V to 6V. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These inputs run at control rate, not at the full audio rate.
+Below the X and Y trimmers are CV modulation inputs. The inputs can accept values from -6V to 6V. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These inputs run at control rate, not at the full audio rate.
 
 > Tip: The Workshop System's Slopes modules, when running in Loop mode with nothing connected to the input, will output 0V to 12V. This is not ideal when connected to the X and Y inputs, but there is a workaround for this, see CV Out 2 **[12]**. However the built-in SineSquare Oscillators do map to the ±6V range and sound great as modulators.
 
