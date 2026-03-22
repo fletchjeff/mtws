@@ -2,6 +2,8 @@
 
 Knots is a six-engine oscillator firmware for the Music Thing Workshop System that turns it into a bank of six selectable engines. The Main knob sets pitch, X and Y shape the current engine, and the Z switch lets you flip into Alt mode or move to the next engine slot. The rest of the ins, outs, and the USB MIDI make it easy to integrate with the rest of the Workshop System and your other music-making gear. It's built to be played, patched, and connected.
 
+[Video Overview](https://youtu.be/mE8FjwyQ3GQ)
+
 ![MTWS](images/MTWS_800.png)
 
 ## Inputs, Outputs and Control
@@ -16,9 +18,9 @@ The X and Y trimmers adjust 2 parameters exposed by the engines. These differ pe
 The X trimmer has an additional function used in conjunction with the Z switch.
 
 #### [5] + [6] X and Y Inputs
-Below the X and Y trimmers are CV modulation inputs. The inputs can accept values from -6V to 6V. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These inputs run at control rate, not at the full audio rate.
+Below the X and Y trimmers are CV modulation inputs. The inputs can accept values from -6 V to 6 V. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These inputs run at control rate, not at the full audio rate.
 
-> Tip: The Workshop System's Slopes modules, when running in Loop mode with nothing connected to the input, will output 0V to 12V. This is not ideal when connected to the X and Y inputs, but there is a workaround for this, see CV Out 2 **[12]**. However the built-in SineSquare Oscillators do map to the ±6V range and sound great as modulators.
+> Tip: The Workshop System's Slopes modules, when running in Loop mode with nothing connected to the input, will output 0 V to 12 V. This is not ideal when connected to the X and Y inputs, but there is a workaround for this, see CV Out 2 **[12]**. However the built-in SineSquare Oscillators do map to the ±6 V range and sound great as modulators.
 
 #### [4] The Z Switch
 The Z switch does 4 things:
@@ -36,39 +38,39 @@ Audio Out 1 and 2 are the two outputs for the module and will either output the 
 > Tip: Pan the outputs left and right out the Workshop Thing mixer, it sounds great!
 
 #### [9] CV In 1
-A 1V per octave CV input connected to the main tuning. It works relative to the Main knob position but doesn't exceed the 10Hz - 10KHz range limit.
+A 1 V per octave CV input connected to the main tuning. It works relative to the Main knob position but doesn't exceed the 10Hz - 10KHz range limit.
 
 > Tip: It's fun to connect the SineSquare Oscillators to this input. However, there is no attenuator for it, but you can pass the oscillator's output through the Stompbox section and use the Blend knob to attenuate the signal. CV In 1 runs at control rate - approx 1kHz - so you can get FM-ish sounds this way, but it's not full-on FM.
 
 #### [10] CV In 2 
-CV In 2 acts like a standard VCA for both outputs. The input responds to signals in the 0-5V range. Zero and below mutes both outputs. 5V and above (up to the 6V limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in.
+CV In 2 acts like a standard VCA for both outputs. The input responds to signals in the 0-5 V range. Zero and below mutes both outputs. 5 V and above (up to the 6 V limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in.
 
 **Note:** the Ring Mod on the Workshop System can also be used as a VCA, but then you don't get stereo and you no longer have a ring modulator. This frees it up for additional weirdness!
 
 > Tip: Patching Pulse Out 1 **[15]** to CV In 2 **[10]** while sending MIDI will gate the outputs to note on/off messages. And if you patch Pulse Out 1 **[15]** into a Slope input on the Workshop System and then into CV In 2 **[10]**, you can create variable envelopes to shape the beginning and end of the notes.
 
 #### [11] CV Out 1
-This passes the MIDI note value out in 1V per octave format. This is independent of the Main knob position or CV In 1 so it's a direct MIDI to CV mapping. Handy for sending MIDI sequences to other oscillators.
+This passes the MIDI note value out in 1 V per octave format. This is independent of the Main knob position or CV In 1 so it's a direct MIDI to CV mapping. Handy for sending MIDI sequences to other oscillators.
 
 #### [12] CV Out 2
-CV Out 2 is a secret weapon! It is connected internally to MIDI CC 74, so you can send MIDI Control Change messages from your DAW/MIDI sequencer and control anything that accepts a -5V to 5V input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
+CV Out 2 is a secret weapon! It is connected internally to MIDI CC 74, so you can send MIDI Control Change messages from your DAW/MIDI sequencer and control anything that accepts a -6 V to 6 V input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
 
-When the module restarts or the MIDI CC 74 value is set to 0, it will output -6V which can be very useful on the Workshop System.
+When the module restarts or the MIDI CC 74 value is set to 0, it will output -6 V which can be very useful on the Workshop System.
 
-> Tip: The SineSquare Oscillators can become LFOs if you patch the -6V coming out of CV Out 2 into the Pitch In. They will run a lot slower!
+> Tip: The SineSquare Oscillators can become LFOs if you patch the -6 V coming out of CV Out 2 into the Pitch In. They will run a lot slower!
 
-> Tip: The Slopes are a type of variable slew rate limiter and you can change them from the default 0-12V output to -6V to 6V range by patching the -6V coming out of CV Out 2 **[12]** into the Slope input, make sure it's not the Slope's CV In. This is useful for getting another LFO.
+> Tip: The Slopes are a type of variable slew rate limiter and you can change them from the default 0-12 V output to -6 V to 6 V range by patching the -6 V coming out of CV Out 2 **[12]** into the Slope input, make sure it's not the Slope's CV In. This is useful for getting another LFO.
 
 #### [13] Pulse In 1
-When plugged in it overrides the Z up/middle position setting and switches the module between Normal mode with a low input (0V) and Alt mode with a high input (5V).
+When plugged in it overrides the Z up/middle position setting and switches the module between Normal mode with a low input (0 V) and Alt mode with a high input (5 V).
 
 #### [14] Pulse In 2
-When plugged in it overrides the Z momentary down/middle position setting and advances to the next engine on each new rising edge (0 to 5V).
+When plugged in it overrides the Z momentary down/middle position setting and advances to the next engine on each new rising edge (0 to 5 V).
 
 > Tip: Connecting the SineSquare Oscillators' square outputs to these Pulse inputs is some rhythmic fun!
 
 #### [15] Pulse Out 1
-This follows the MIDI gate on/off, going high (5V) while the note is held.
+This follows the MIDI gate on/off, going high (5 V) while the note is held.
 
 #### [16] Pulse Out 2
 This is the other secret weapon. Pulse Out 2 is a clock output that can drive sequencers, delays, or just make interesting rhythmic patterns. The speed of the clock can be adjusted by holding the Z switch down and turning the X trimmer. Once you've turned the X knob while holding Z down, the engine slot won't advance when you release Z.
@@ -86,7 +88,7 @@ The clock rate goes from 20 - 999 BPM. If there is a MIDI clock present at the U
 | 2 | 1/32 triplet |
 | 1 | raw 24 PPQN clock |
 
-The output is a ~5ms, 5V pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
+The output is a ~5ms, 5 V pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
 
 > Tip: Plugging Pulse Out 2 **[16]** output into a Slope input lets you maintain a tempo for the Slope output but adjust the slope's angles for interesting rhythmic timbre changes.
 

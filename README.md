@@ -101,7 +101,7 @@ The X and Y trimmers adjust 2 parameters exposed by the engines. These differ pe
 
 Below the X and Y trimmers are the two audio inputs. This layout lends itself to using those audio inputs as CV inputs for the X and Y trimmers. The ComputerCard has a function `Connected(Input::Audio1)` that will allow different code to run if there is a cable connected to the input jack. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These Audio inputs run at control rate, not at the full audio rate. 
 
-Both the Audio and CV inputs can accept values from -6v to 6v. This is clamped to -5v to 5v in the code though. The Slopes modules, when running in Loop mode with nothing connected to the input, will output 0v to 12v. This is not ideal and this is a mismatch that would normally be solved using the input trimmers as [attenuverters](https://www.modularbias.com/glossary/attenuverter/), not attenuators. However the built-in SineSquare Oscillators do map to the ±6v range and sound great as modulators. There is an easy workaround for the 0-12v issue discussed in the CV I/O section.
+Both the Audio and CV inputs can accept values from -6 V to 6 V. This is clamped to -5 V to 5 V in the code though. The Slopes modules, when running in Loop mode with nothing connected to the input, will output 0 V to 12 V. This is not ideal and this is a mismatch that would normally be solved using the input trimmers as [attenuverters](https://www.modularbias.com/glossary/attenuverter/), not attenuators. However the built-in SineSquare Oscillators do map to the ±6 V range and sound great as modulators. There is an easy workaround for the 0-12 V issue discussed in the CV I/O section.
 
 The X trimmer has an additional function used in conjunction with the Z switch.
 
@@ -125,13 +125,13 @@ Audio Out 1 and 2 are the two outputs for the module and will either output the 
 The repurposed Audio In 1 + 2 for the X/Y CV is explained above. The remaining CV I/O is:
 
 **CV In 1**  
-A 1v per Octave CV input   
+A 1 V per Octave CV input   
 connected to the main tuning. It works relative to the Main knob position but doesn't exceed the 10Hz - 10KHz range limit.
 
 > Tip: It's fun to connect the SineSquare Oscillators to this input. However there is no attenuator for it, but you can pass the oscillator's output through the Stompbox section and use the Blend knob to attenuate the signal. CV In 1 runs at control rate - approx 1kHz - so you can get FM-ish sounds this way but it's not full on FM.
 
 **CV In 2**  
-CV In 2 is a VCA, an idea taken from Twists but implemented differently. It acts like a standard VCA for both outputs, but you need to provide the gate/envelope. The input responds to signals in the 0-5v range. Zero and below mutes both outputs. 5v and above (up to the 6v limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in. 
+CV In 2 is a VCA, an idea taken from Twists but implemented differently. It acts like a standard VCA for both outputs, but you need to provide the gate/envelope. The input responds to signals in the 0-5 V range. Zero and below mutes both outputs. 5 V and above (up to the 6 V limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in. 
 
 There is a configurable slew in the code that prevents the VCA from sounding too clicky when getting gate inputs. Look for `kVCAGainSmoothShift`, if you want this to be faster or slower, or tell your coding agent to do it.
 
@@ -140,31 +140,31 @@ There is a configurable slew in the code that prevents the VCA from sounding too
 > Tip: Patching Pulse Out 1 to CV In 2 with USB MIDI will gate the outputs to note on/off messages. And if you patch Pulse Out 1 into a slope input and then into CV In 2, you can create variable envelopes to shape the start and end of the notes.
 
 **CV Out 1**  
-This passes the MIDI note out in 1v per Octave format. This is independent of the Main knob or CV In 1 so it's a direct MIDI to CV mapping, using the `CVOut1MIDINote()` function from the ComputerCard, which is the calibrated output. Handy for sending MIDI sequences to other oscillators.
+This passes the MIDI note out in 1 V per Octave format. This is independent of the Main knob or CV In 1 so it's a direct MIDI to CV mapping, using the `CVOut1MIDINote()` function from the ComputerCard, which is the calibrated output. Handy for sending MIDI sequences to other oscillators.
 
 **CV Out 2**  
-CV Out 2 is a secret weapon! The main connection is to MIDI CC 74, so you can send control messages from your DAW/MIDI sequencer and control anything that accepts a -6 to 6v input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
+CV Out 2 is a secret weapon! The main connection is to MIDI CC 74, so you can send control messages from your DAW/MIDI sequencer and control anything that accepts a -6 V to 6 V input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
 
-When the module restarts or the MIDI CC 74 value is set to 0, it will output -6v which can be very useful on the Workshop System.
+When the module restarts or the MIDI CC 74 value is set to 0, it will output -6 V which can be very useful on the Workshop System.
 
-> Tip: The SineSquare Oscillators can become LFOs if you patch the -6v coming out of CV Out 2 into the Pitch In. They will run a lot slower!
+> Tip: The SineSquare Oscillators can become LFOs if you patch the -6 V coming out of CV Out 2 into the Pitch In. They will run a lot slower!
 
-> Tip: The Slopes are a type of variable [slew rate limiter](https://en.wikipedia.org/wiki/Slew_rate) and you can change them from the default 0-12v output to -6v to 6v range by patching the -6v coming out of CV Out 2 into the Slope input, not the Slope's CV In. This does change the rate when in Loop mode and I’m not sure why. This is useful for getting another LFO that works well with other CV inputs on the Computer module.
+> Tip: The Slopes are a type of variable [slew rate limiter](https://en.wikipedia.org/wiki/Slew_rate) and you can change them from the default 0-12 V output to -6 V to 6 V range by patching the -6 V coming out of CV Out 2 into the Slope input, not the Slope's CV In. This does change the rate when in Loop mode and I’m not sure why. This is useful for getting another LFO that works well with other CV inputs on the Computer module.
 
 #### Pulse I/O
 
 The bottom row of jacks is the Pulse section. These inputs are simple.
 
 **Pulse In 1**  
-When plugged in it overrides the Z up/middle position setting and switches the module between Normal mode with a low input (0v) and Alt mode with a high input (5v).
+When plugged in it overrides the Z up/middle position setting and switches the module between Normal mode with a low input (0 V) and Alt mode with a high input (5 V).
 
 **Pulse In 2**  
-When plugged in it overrides the Z momentary down/middle position setting and advances to the next engine on each new rising edge (0 to 5v).
+When plugged in it overrides the Z momentary down/middle position setting and advances to the next engine on each new rising edge (0 to 5 V).
 
 > Tip: Connecting the SineSquare Oscillators square outputs to these Pulse inputs gets very interesting!
 
 **Pulse Out 1**  
-This follows the MIDI gate on/off, going high (5v) while the note is held.
+This follows the MIDI gate on/off, going high (5 V) while the note is held.
 
 **Pulse Out 2**  
 This is the other secret weapon. Pulse Out 2 is a clock output that can drive sequencers, delays or just make interesting rhythmic patterns. The speed of the clock can be adjusted by holding the Z switch down and turning the X trimmer. Once you've turned the X knob while holding Z down, the engine slot won't advance when you release Z.
@@ -182,7 +182,7 @@ The clock rate goes from 20 - 999 BPM. If there is a MIDI clock present at the U
 | 2 | 1/32 triplet |
 | 1 | raw 24 PPQN clock |
 
-The output is a ~5ms, 5v pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
+The output is a ~5ms, 5 V pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
 
 > Tip: Plugging Pulse Out 2 output into a Slope input lets you keep the tempo of the Slope output but adjust the slope's angles for interesting rhythmic timbre changes.
 
@@ -245,11 +245,13 @@ A wavetable oscillator with 2 wavetables based on 16 x 256 sample [AKWF](https:/
 
 You move through wavetables (with interpolation) using the X and Y knobs, sending the X position to output 1 and Y position to output 2. This creates an interesting stereo field.
 
+![Floatable](docs/images/floatable.png)
+
 The original idea was to have 2 different wavetables per mode going out each output, 4 in total for both modes. Unfortunately the reads from flash via XIP were too much and caused it to glitch. Something I learned about during this whole process.
 
 The actual wavetables used were created using a web-based tool made with the coding agent that lets you browse through, filter, audition and assemble your own "curated" wavetable. See the [floatable wavetable creator](tools/floatable_wavetable_creator/) folder.
 
-![Floatable](docs/images/floatable.png)
+![Wavetable creator](docs/images/wavetable_creator.jpg)
 
 This took an evening to make while dual screening a show and is surprisingly fun to use. If you don't like the wavetables being used, use the tool to make your own or tell your coding agent to use whatever wave files you like. Convert it to the required header format and rebuild the firmware.
 
@@ -392,76 +394,9 @@ These are the learnings from using the coding agent during this process:
 
 The most useful part in all of this is that I now know way more about C++ DSP code and how oscillators are made than I did when I started.
 
-**Be curious, ask questions and read the code.**
+**Be curious, read the code and ask the coding questions!**
 
-**How is triangle in the alt mode for sawsome generated?**
-
-In `sawsome`, the alt-mode triangle is generated by taking the same per-voice PolyBLEP saw and running it through a simple per-voice leaky integrator. The mode switch happens in `sawsome_engine.cpp (line 170):` normal mode calls `PolyBlepSawQ12(...)`, while alt mode calls `PolyBlepTriangleQ12(...)`.
-
-The triangle function itself is in `sawsome_engine.cpp (line 154):` it first computes the band-limited saw with `PolyBlepSawQ12(...)` then accumulates that into `tri_state_[voice_index]` then applies a small leak with `tri_state_[voice_index] -= tri_state_[voice  _index] >> 11` then scales it back down with `>> 5` and clamps to 12-bit
-
-So the core shape is basically:
-
-```c
-saw = PolyBlepSawQ12(...)
-tri_state += saw
-tri_state -= tri_state >> 11
-triangle = tri_state >> 5
-A couple of useful details:
-```
-
-It is not using a LUT for the triangle. It is per voice, using `tri_state_[kNumSawsomeVoices]` in `sawsome_engine.h (line 23)`. The leak term keeps the integrator from drifting or blowing up over time. The detune, pan, and gain setup stay the same; alt mode only changes the waveform source.
-
-Explain to me how this `tri_state_[voice_index] -= tri_state_[voice_index] >> 11` creates a triangle?
-
-That line does not create the triangle by itself. The triangle-ish waveform comes from the whole block in `sawsome_engine.cpp (line 154):`
-
-```c
-int32_t saw = PolyBlepSawQ12(...);
-tri_state_[voice_index] += saw;
-tri_state_[voice_index] -= tri_state_[voice_index] >> 11;
-return Clamp12(tri_state_[voice_index] >> 5);
-```
-
-The key step is `tri_state += saw`. That is a discrete-time integrator: each sample, it adds the current saw value into a running state. Then `tri_state -= tri_state >> 11` subtracts about 1/2048 of that state each sample, since `>> 11` is roughly divide-by-2048. So the full update is approximately:
-
-```c
-y[n] = 0.9995 * y[n-1] + x[n]
-```
-
-That is a leaky integrator, or a very slow one-pole low-pass.
-
-Why that sounds triangle-like: integrating a bright waveform knocks down its upper harmonics much harder, so the saw becomes much softer and more “triangle-ish.” The leak keeps the state from drifting or blowing up from tiny DC/rounding errors, and it stabilizes the amplitude. At 48 kHz, that leak constant is gentle enough that over most of one oscillator cycle it behaves almost like a plain integrator.
-
-One important nuance: this is not a mathematically perfect triangle. A perfect triangle is more naturally made by integrating a square wave or folding phase directly. Here it’s really “PolyBLEP saw through a leaky integrator,” which is a cheap, stable approximation that gets close enough sonically.
-
-What is XIP?
-
-`XIP` means `execute in place`.
-
-On the RP2040, your program and `const` data usually live in external QSPI flash, but the chip memory-maps that flash so code can run from it and data can be read from it without first copying everything into SRAM.
-
-In practice for this repo:
-
-- functions not marked to run from RAM often execute from flash via XIP  
-- large `static const` tables like the `floatable` wavetable banks are typically read directly from flash via that same mapping  
-- this saves scarce SRAM, which is why it’s attractive for big lookup tables
-
-The tradeoff is speed and predictability:
-
-- SRAM access is faster and more deterministic  
-- XIP flash access goes through the flash interface and cache, so it can be slower or less predictable under heavy access  
-- that’s why hot code paths sometimes use `__not_in_flash_func(...)` to place the function in RAM instead of executing from flash
-
-So when I said the `floatable` tables are being read through XIP, I meant:
-
-- the wavetable arrays are stored in flash  
-- `RenderSample()` dereferences them directly each audio tick  
-- they are not copied into a separate RAM buffer first
-
-A simple mental model:
-
-- SRAM: fast workbench  
-- flash/XIP: big storage shelf you can reach directly, but not as quickly as the workbench
-
-If you want, I can explain how `__not_in_flash_func` and the RP2040 linker/script usually decide what ends up in RAM vs flash in this project.  
+Things I asked the coding agent:
+* How is triangle in the alt mode for sawsome generated?
+* Explain to me how this `tri_state_[voice_index] -= tri_state_[voice_index] >> 11` creates a triangle?
+* What is XIP?
