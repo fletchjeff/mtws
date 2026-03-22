@@ -2,7 +2,9 @@
 
 Knots is a 6 oscillator firmware for the Music Thing Workshop System.
 
-***Note:** This is the write-up about building this thing. If you just want the [user guide](docs/MTWS_USER_GUIDE.md) <- click that.*
+[Video Overview](https://youtu.be/mE8FjwyQ3GQ)
+
+***Note:** This is the write-up about building this thing. If you just want the [user guide](docs/USER_GUIDE.md) <- click that.*
 
 This all started because I wanted a hardware additive oscillator that can change the frequencies of the partials. Something similar to the centroid dissonance effect on Native Instruments' Razor. I was considering the Xaoc Odessa when I saw the [CDM article](https://cdm.link/diy-world-of-music-thing-workshop-system/) about the Music Thing Workshop System. It's been out for a while and I was surprised it was new to me. It seemed like a cool device, the kit form was cheaper than the Odessa (and easier to justify). Plus I enjoy doing the DIY builds. So I gave up on my additive oscillator idea and bought that instead.
 
