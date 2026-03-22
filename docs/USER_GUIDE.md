@@ -1,10 +1,6 @@
 # Knots
 
-Knots is a six-engine oscillator firmware for the Music Thing Workshop System that turns it into a bank of six selectable engines.
-
-The Main knob sets pitch, X and Y shape the current engine, and the Z switch lets you flip into Alt mode or move to the next engine slot.
-
-The rest of the ins, outs, and the USB MIDI make it easy to integrate with the rest of the Workshop System and your other music-making gear. It's built to be played, patched, and connected.
+Knots is a six-engine oscillator firmware for the Music Thing Workshop System that turns it into a bank of six selectable engines. The Main knob sets pitch, X and Y shape the current engine, and the Z switch lets you flip into Alt mode or move to the next engine slot. The rest of the ins, outs, and the USB MIDI make it easy to integrate with the rest of the Workshop System and your other music-making gear. It's built to be played, patched, and connected.
 
 ![MTWS](images/MTWS_800.png)
 
@@ -171,7 +167,7 @@ This runs the 3 formant oscillators at F1, F2 and F3 for the associated vowel. *
 | O | 325 | 700 | 2550 |
 | U | 415 | 1400 | 2200 |
 
-**X** morphs the formant frequency and gain values between the vowels, moving from A > E > IY > O > U over the range of the knob.
+**X** morphs the formant frequency and gain values between the vowels, moving from A > E > IY > O > U over the range of the knob for Audio Out 1 **[7]** and the inverse sweep (U > O > IY > E > A) for Audio Out 2 **[8]**.
 
 **Y** changes the F1 value but keeps the ratios between them the same, which changes it from sounding darker/lower at full CCW to brighter/higher at full CW.
 
