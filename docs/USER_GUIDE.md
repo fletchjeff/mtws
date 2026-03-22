@@ -2,7 +2,9 @@
 
 Knots is a six-engine oscillator firmware for the Music Thing Workshop System that turns it into a bank of six selectable engines. The Main knob sets pitch, X and Y shape the current engine, and the Z switch lets you flip into Alt mode or move to the next engine slot. The rest of the ins, outs, and the USB MIDI make it easy to integrate with the rest of the Workshop System and your other music-making gear. It's built to be played, patched, and connected.
 
-[Video Overview](https://youtu.be/mE8FjwyQ3GQ)
+Video overview:
+
+[![Watch the video](https://img.youtube.com/vi/mE8FjwyQ3GQ/hqdefault.jpg)](https://youtu.be/mE8FjwyQ3GQ)
 
 ![MTWS](images/MTWS_800.png)
 
