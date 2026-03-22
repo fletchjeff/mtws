@@ -91,7 +91,7 @@ The output is a ~5ms, 5V pulse for each clock tick. This was tested with a Moog 
 > Tip: Plugging Pulse Out 2 **[16]** output into a Slope input lets you maintain a tempo for the Slope output but adjust the slope's angles for interesting rhythmic timbre changes.
 
 #### [17] USB
-The USB input is simply a class-compliant MIDI interface. It only does MIDI note value, on/off and MIDI CC 74. The note value is a "last note wins" implementation. The CV Out 1 **[9]** and Main knob **[1]** tuning keep the last value too. The MIDI input is hardcoded to MIDI channel 1.
+The USB input is simply a class-compliant MIDI interface. It only does MIDI note value, on/off and MIDI CC 74. The note value is a "last note wins" implementation. The CV Out 1 **[11]** and Main knob **[1]** tuning keep the last value too. The MIDI input is hardcoded to MIDI channel 1.
 
 #### LEDs
 This shows the currently selected engine and flashes briefly when receiving MIDI notes.
@@ -118,7 +118,7 @@ This is a super triangle mode, which is the same thing but with triangle waves.
 A combination wavefolder and bitcrusher.
 
 *Normal Mode*  
-2 sine waves are generated with one wave going through a wavefolder to Audio Out 1 **[7]** and the other going through a bitcrusher to Audio Out 2 **[7]**.
+2 sine waves are generated with one wave going through a wavefolder to Audio Out 1 **[7]** and the other going through a bitcrusher to Audio Out 2 **[8]**.
 **X** is the amount of folding and **Y** is the amount of crushing.
 
 *Alt Mode*  
@@ -131,7 +131,7 @@ In Alt Mode, the wavefolder is routed through an additional bitcrusher first bef
 #### Floatable
 A wavetable oscillator with 2 wavetables based on 16 x 256-sample [AKWF](https://www.adventurekid.se/akrt/waveforms/adventure-kid-waveforms/) single-cycle waves. One wavetable per mode, i.e. Normal and Alt modes use different wavetables.
 
-Move through wavetables (with interpolation) using the X and Y knobs, sending the X position wave to Audio Out 1 **[7]** and Y position Audio Out 2 **[7]**. This creates an interesting stereo field.
+Move through wavetables (with interpolation) using the X and Y knobs, sending the X position wave to Audio Out 1 **[7]** and Y position Audio Out 2 **[8]**. This creates an interesting stereo field.
 
 ![Floatable](images/floatable.png)
 

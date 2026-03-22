@@ -101,9 +101,7 @@ The X and Y trimmers adjust 2 parameters exposed by the engines. These differ pe
 
 Below the X and Y trimmers are the two audio inputs. This layout lends itself to using those audio inputs as CV inputs for the X and Y trimmers. The ComputerCard has a function `Connected(Input::Audio1)` that will allow different code to run if there is a cable connected to the input jack. If there is a cable connected, the X and Y trimmers become *attenuators* for the CV signal on the input cable. These Audio inputs run at control rate, not at the full audio rate. 
 
-Both the Audio and CV inputs can accept values from -6v to 6v. The Slopes modules, when running in Loop mode with nothing connected to the input, will output 0v to 12v. This is not ideal and this is a mismatch that would normally be solved using the input trimmers as [attenuverters](https://www.modularbias.com/glossary/attenuverter/), not attenuators. However the built-in SineSquare Oscillators do map to the ±6v range and sound great as modulators. There is an easy workaround for the 0-12v issue discussed in the CV I/O section.
-
-Audio In 1 + 2 were repurposed as control inputs for the X and Y parameters and when connected, the trimmers act as attenuation controls for the input source.
+Both the Audio and CV inputs can accept values from -6v to 6v. This is clamped to -5v to 5v in the code though. The Slopes modules, when running in Loop mode with nothing connected to the input, will output 0v to 12v. This is not ideal and this is a mismatch that would normally be solved using the input trimmers as [attenuverters](https://www.modularbias.com/glossary/attenuverter/), not attenuators. However the built-in SineSquare Oscillators do map to the ±6v range and sound great as modulators. There is an easy workaround for the 0-12v issue discussed in the CV I/O section.
 
 The X trimmer has an additional function used in conjunction with the Z switch.
 
@@ -133,7 +131,9 @@ connected to the main tuning. It works relative to the Main knob position but do
 > Tip: It's fun to connect the SineSquare Oscillators to this input. However there is no attenuator for it, but you can pass the oscillator's output through the Stompbox section and use the Blend knob to attenuate the signal. CV In 1 runs at control rate - approx 1kHz - so you can get FM-ish sounds this way but it's not full on FM.
 
 **CV In 2**  
-CV In 2 is a VCA, an idea taken from Twists but implemented differently. It acts like a standard VCA for both outputs, but you need to provide the gate/envelope. The input responds to signals in the 0-5v range. Zero and below mutes both outputs. 5v and above (up to the 6v limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in. There is a configurable slew in the code that prevents the VCA from sounding too clicky when getting gate inputs. Look for `kVCAGainSmoothShift`, if you want this to be faster or slower, or tell your coding agent to do it.
+CV In 2 is a VCA, an idea taken from Twists but implemented differently. It acts like a standard VCA for both outputs, but you need to provide the gate/envelope. The input responds to signals in the 0-5v range. Zero and below mutes both outputs. 5v and above (up to the 6v limit) sets unity gain for the outputs. It's also set to unity gain if nothing is plugged in. 
+
+There is a configurable slew in the code that prevents the VCA from sounding too clicky when getting gate inputs. Look for `kVCAGainSmoothShift`, if you want this to be faster or slower, or tell your coding agent to do it.
 
 ***Note:** the Ring Mod can also be used as a VCA, but then you don't get stereo and you no longer have a ring modulator. This frees it up for additional weirdness!*
 
@@ -143,13 +143,13 @@ CV In 2 is a VCA, an idea taken from Twists but implemented differently. It acts
 This passes the MIDI note out in 1v per Octave format. This is independent of the Main knob or CV In 1 so it's a direct MIDI to CV mapping, using the `CVOut1MIDINote()` function from the ComputerCard, which is the calibrated output. Handy for sending MIDI sequences to other oscillators.
 
 **CV Out 2**  
-CV Out 2 is a secret weapon! The main connection is to MIDI CC 74, so you can send control messages from your DAW/MIDI sequencer and control anything that accepts a -5 to 5v input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
+CV Out 2 is a secret weapon! The main connection is to MIDI CC 74, so you can send control messages from your DAW/MIDI sequencer and control anything that accepts a -6 to 6v input. MIDI CC is limited to 128 steps, so it might be a bit too jagged for precision requirements.
 
-When the module restarts or the MIDI CC 74 value is set to 0, it will output -5v which can be very useful on the Workshop System.
+When the module restarts or the MIDI CC 74 value is set to 0, it will output -6v which can be very useful on the Workshop System.
 
-> Tip: The SineSquare Oscillators can become LFOs if you patch the -5v coming out of CV Out 2 into the Pitch In. They will run a lot slower!
+> Tip: The SineSquare Oscillators can become LFOs if you patch the -6v coming out of CV Out 2 into the Pitch In. They will run a lot slower!
 
-> Tip: The Slopes are a type of variable [slew rate limiter](https://en.wikipedia.org/wiki/Slew_rate) and you can change them from the default 0-12v output to -5v to 7v range by patching the -5v coming out of CV Out 2 into the Slope input, not the Slope's CV In. This does change the rate when in Loop mode and I’m not sure why. This is useful for getting another LFO that works well with other CV inputs on the Computer module.
+> Tip: The Slopes are a type of variable [slew rate limiter](https://en.wikipedia.org/wiki/Slew_rate) and you can change them from the default 0-12v output to -6v to 6v range by patching the -6v coming out of CV Out 2 into the Slope input, not the Slope's CV In. This does change the rate when in Loop mode and I’m not sure why. This is useful for getting another LFO that works well with other CV inputs on the Computer module.
 
 #### Pulse I/O
 
@@ -182,7 +182,7 @@ The clock rate goes from 20 - 999 BPM. If there is a MIDI clock present at the U
 | 2 | 1/32 triplet |
 | 1 | raw 24 PPQN clock |
 
-The output is a ±5ms, 5v pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
+The output is a ~5ms, 5v pulse for each clock tick. This was tested with a Moog DFAM and it drives the sequencer as expected!
 
 > Tip: Plugging Pulse Out 2 output into a Slope input lets you keep the tempo of the Slope output but adjust the slope's angles for interesting rhythmic timbre changes.
 
@@ -249,7 +249,7 @@ The original idea was to have 2 different wavetables per mode going out each out
 
 The actual wavetables used were created using a web-based tool made with the coding agent that lets you browse through, filter, audition and assemble your own "curated" wavetable. See the [floatable wavetable creator](tools/floatable_wavetable_creator/) folder.
 
-- [ ] TO-DO, picture of the tool goes here.
+![Floatable](docs/images/floatable.png)
 
 This took an evening to make while dual screening a show and is surprisingly fun to use. If you don't like the wavetables being used, use the tool to make your own or tell your coding agent to use whatever wave files you like. Convert it to the required header format and rebuild the firmware.
 
@@ -257,7 +257,7 @@ This took an evening to make while dual screening a show and is surprisingly fun
 
 This is the original additive oscillator idea. This borrows most of the fundamental design ideas from the Plaits Harmonic Oscillator, which is a bump and slope implementation with 24 partials. This implementation uses 16, which is about the max the RP2040 can reasonably handle.
 
-- [ ] TO-DO, picture of the bump and slope goes here.
+![Cumulus](docs/images/cumulus.png)
 
 It consists of 16 phase increment oscillators whose frequencies follow the standard [harmonic series](https://en.wikipedia.org/wiki/Harmonic_series_(music)) from the fundamental, each generating a sine wave using the `SinLUT()` function.
 
@@ -269,15 +269,15 @@ There was some complexity managing the overall output gain to keep a constant pe
 Well .. approximately that at either end. Making it exactly flat or only using 2 partials would require extra calculations for an already busy oscillator. At the midpoint of **Y,** the partials follow a $1/N$ distribution, which is also a [harmonic series](https://en.wikipedia.org/wiki/Harmonic_series_(mathematics)) but a maths one. There is a different code path used to calculate the gain for each partial depending on whether **Y** is before or after the midpoint, to make the scaling sound natural. Ask your coding agent about this, e.g. *"How does the Y slope calculation path change over at the midpoint?"*
 
 *Alt Mode*  
-Alt mode implements a "centroid" feature that can change the frequencies of the partials. Using the *bump*, i.e. the **X** position, as the central point, **Y** will additionally modify the partial frequencies to **move in** toward the *bump* position going CCW and **move out** to the edges (partial 1 and 16) going CW. Try it, it sounds very cool!
+Alt mode implements a "centroid" feature that can change the frequencies of the partials. Using the *bump*, i.e. the **X** position, as the central point, **Y** will modify the partial frequencies to **move in** toward the *bump* position going CCW and **move out** to the edges (partial 1 and 16) going CW. Try it, it sounds very cool!
 
-- [ ] TO-DO, picture of the bump and slope plus harmonic shift goes here.
+![Cumulus](docs/images/cumulus.png)
 
 #### Losenge
 
 I have a very old and somewhat road-worn Nord Modular Micro that was my introduction to the world of modular synthesis.
 
-- [ ] TO-DO, picture of the nord
+![Nord](docs/images/nord.jpg)
 
 It has both a vocal oscillator and vowel filter that sound great and I wanted to make something similar. The initial idea was to get this to work by putting 2 bandpass filters set to the vowel [formant frequencies](https://en.wikipedia.org/wiki/Formant) after a saw wave. This didn't have the depth of vowel-like sound that the Nord does. The Twists/Braids `VOWL` oscillator is much closer to that Nord sound, so I got the coding agent to implement that.
 
@@ -288,7 +288,7 @@ There is also the primary phase increment ramp oscillator, with its frequency at
 1. It applies amplitude modulation to the 3 summed formant oscillators.  
 2. It resets the phase of all 3 of the formant oscillators every time it wraps, like oscillator sync.
 
-- [ ] TO-DO, picture of this implementation
+![Losenge](docs/images/losenge.png)
 
 This gives the impression of an overall fundamental frequency being applied to the 3 formant oscillators that can be shifted around while keeping the underlying vowel consistent. By changing the frequency and gain values of the formant oscillators independently from the main glottal envelope, you get the singing voice timbre of the Losenge engine.
 
@@ -303,14 +303,14 @@ This runs the 3 formant oscillators at F1, F2 and F3 for the associated vowel. *
 | O | 325 | 700 | 2550 |
 | U | 415 | 1400 | 2200 |
 
-**X** morphs the formant frequency and gain values between the vowels, moving from A > E > IY > O > U over the range of the knob.
+**X** morphs the formant frequency and gain values between the vowels, moving from A > E > IY > O > U over the range of the knob for Audio Out 1 and the inverse sweep (U > O > IY > E > A) for Audio Out 2.
 
 **Y** changes the F1 value but keeps the ratios between them the same, which changes it from sounding darker/lower at full CCW to brighter/higher at full CW.
 
 *Alt Mode*  
 This is the brighter upper-formant table. It replaces the base `F1/F2/F3` set with an upper `F2/F3/F4` value.
 
-| Vowel | F2-like (Hz) | F3-like (Hz) | F4-like (Hz) |
+| Vowel | F2 (Hz) | F3 (Hz) | F4 (Hz) |
 | :---- | ----: | ----: | ----: |
 | A | 1000 | 2450 | 3300 |
 | E | 1700 | 2300 | 3500 |
@@ -325,20 +325,20 @@ An early iteration used the frequency mapping for a female voice for Alt mode, b
 Where Bender is the distortion module, this is the noise module. Both modes are based on an oscillator that morphs between a sine wave and saw wave using `SinLUT()` and `PolyBlepSawQ12()` respectively.
 
 *Normal Mode*  
-In Normal mode the transition is an interpolation between the 2 waves with added noise. **X** controls the position between the 2 waves. Sine wave at full CCW and a saw wave at full CW. As you move **X** the interpolation point moves between the sine wave and saw wave with a random variation around the interpolation point. The mid point of **X** is halfway between the 2 waves and starts sounding like pitched noise. 
+In Normal mode the transition is an interpolation between the 2 waves with added noise. **X** controls the position between the 2 waves. Sine wave at full CCW and a saw wave at full CW. As you move **X** the interpolation point moves between the sine wave and saw wave with a random variation around the interpolation point. The midpoint of **X** is halfway between the 2 waves and starts sounding like pitched noise. 
 
 **Y** changes the noise from low-passed noise at full CCW for a smoother, more controlled sound, to high-passed noise at full CW for a jittery, buzzy sound.
 
 For Audio Out 2 the saw wave is phase shifted 90 degrees to give a sense of widening stereo as you move **X**.
 
-- [ ] TO-DO, picture of the normal mode
+![Din Sum](docs/images/din_sum.png)
 
 *Alt Mode*   
 In Alt mode the output switches between a sine wave and saw wave randomly, but only when the waveform cycle repeats. This way you will always either get one full sine wave or one full saw wave, randomly chosen.
 
 **X** biases the randomness towards the sine wave going CCW and towards the saw wave going CW. The midpoint is 50/50. **Y** is the *rate* of switching, or rather how long a wave is held before it's allowed to change. From slow blips at full CCW to flickering at full CW.
 
-- [ ] TO-DO, picture of the alt
+![Din Sum](docs/images/din_sum.png)
 
 ## Solo Engines
 
