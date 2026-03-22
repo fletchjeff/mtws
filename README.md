@@ -2,6 +2,8 @@
 
 Knots is a 6 oscillator firmware for the Music Thing Workshop System.
 
+Video overview:
+
 [![Watch the video](https://img.youtube.com/vi/mE8FjwyQ3GQ/hqdefault.jpg)](https://youtu.be/mE8FjwyQ3GQ)
 
 ***Note:** This is the write-up about building this thing. If you just want the [user guide](docs/USER_GUIDE.md) <- click that.*
