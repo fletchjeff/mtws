@@ -126,7 +126,7 @@ When the integrated host work starts, the expected direction is:
 
 The visual notebook now has a dedicated local environment:
 
-- virtual environment: `research_docs/.venv`
+- virtual environment: `.venv`
 - dependencies file: `research_docs/requirements.txt`
 - launcher: `research_docs/start_notebook.sh`
 

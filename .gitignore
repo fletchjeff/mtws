@@ -6,7 +6,7 @@ tools/input_monitor_cli/__pycache__/
 tools/input_monitor_cli/.venv/
 
 # Research notebooks and notes are tracked, but local runtime artifacts are not.
-research_docs/.venv/
+.venv/
 research_docs/.mplconfig/
 research_docs/.ipython/
 research_docs/.ipynb_checkpoints/
